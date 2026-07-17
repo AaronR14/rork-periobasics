@@ -80,6 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // CONFIRMADO (17 jul 2026): login de Google funciona de punta a punta en
+  // iOS vía Expo Go + QR oficial de Rork. Pendiente: validar el mismo flujo
+  // en Android (mecanismo interno distinto, Chrome Custom Tabs vs
+  // ASWebAuthenticationSession, sin verificar).
+
   // TODO(App Store release): the UI (LoginScreen) only offers "google" today.
   // Apple requires "Sign in with Apple" as an alternative once this app goes
   // to external TestFlight testers or the App Store — not required for
