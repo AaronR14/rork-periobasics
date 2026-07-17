@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import createContextHook from "@nkzw/create-context-hook";
 
-import { supabase } from "@/lib/supabase";
+import { supabase, getValidAccessToken } from "@/lib/supabase";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
 import { useAuth } from "@/hooks/useAuth";
 import type { ChatMessage, VideoSuggestion } from "@/components/ChatPanel";
@@ -203,10 +203,12 @@ async function generateTitleFromBackend(
       .slice(0, 20)
       .map((m) => ({ role: m.role, text: m.text }));
     if (payload.length === 0) return null;
+    const token = await getValidAccessToken();
     const res = await fetch(`${functionsUrl}/session-title`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
         "X-Toolkit-URL": process.env.EXPO_PUBLIC_TOOLKIT_URL ?? "",
         "X-Toolkit-Key": process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY ?? "",
         ...supabaseHeaders,

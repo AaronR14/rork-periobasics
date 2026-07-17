@@ -38,6 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { submitChatAnswer, type ChatCompetencyEvent } from "@/hooks/useProgress";
 import { useChatSessions, type ChatSession, GREETING_TEXT } from "@/hooks/useChatSessions";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
+import { getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 
 export type ChatRole = "alumno" | "tutor";
 
@@ -97,10 +98,12 @@ async function fetchTutorReply(
     return { reply: "El servicio de tutoría no está disponible en este momento." };
   }
   try {
+    const token = await getValidAccessToken();
     const res = await fetch(`${functionsUrl}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
         "X-Toolkit-URL": process.env.EXPO_PUBLIC_TOOLKIT_URL ?? "",
         "X-Toolkit-Key": process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY ?? "",
         ...supabaseHeaders,
@@ -118,6 +121,9 @@ async function fetchTutorReply(
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.warn("fetchTutorReply non-ok:", res.status, errText.slice(0, 300));
+      if (isUnauthorized(res)) {
+        return { reply: SESSION_EXPIRED_MESSAGE };
+      }
       return { reply: "El tutor está procesando muchas solicitudes. Espera unos segundos e inténtalo de nuevo." };
     }
     const data = (await res.json()) as TutorReply;
@@ -135,8 +141,10 @@ async function fetchVideoSuggestion(
 ): Promise<VideoSuggestion | null> {
   if (!functionsUrl) return null;
   try {
+    const token = await getValidAccessToken();
     const res = await fetch(
       `${functionsUrl}/suggest-video?sub_topic_slug=${encodeURIComponent(subTopicSlug)}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as SuggestVideoResponse;

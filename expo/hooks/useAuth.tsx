@@ -80,6 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // TODO(App Store release): the UI (LoginScreen) only offers "google" today.
+  // Apple requires "Sign in with Apple" as an alternative once this app goes
+  // to external TestFlight testers or the App Store — not required for
+  // internal testers only. This function already supports provider: "apple"
+  // (Supabase OAuth is provider-agnostic); only a second button in
+  // LoginScreen is missing when that requirement kicks in.
   async function signIn(provider: "google" | "apple") {
     setIsSigningIn(true);
     setError(null);

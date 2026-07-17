@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useCallback } from "react";
 import createContextHook from "@nkzw/create-context-hook";
 
-import { supabase, syncProfile } from "@/lib/supabase";
+import { supabase, syncProfile, getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
 
@@ -142,52 +142,62 @@ async function fetchVideoViews(userId: string): Promise<VideoView[]> {
   return (data ?? []) as VideoView[];
 }
 
-async function fetchProgressReport(userId: string): Promise<ProgressReport | null> {
-  if (!functionsUrl) return null;
+async function fetchProgressReport(
+  userId: string,
+): Promise<{ report: ProgressReport | null; unauthorized: boolean }> {
+  if (!functionsUrl) return { report: null, unauthorized: false };
   try {
+    const token = await getValidAccessToken();
     const res = await fetch(`${functionsUrl}/progress-assessment`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
         ...supabaseHeaders,
       },
       body: JSON.stringify({ user_id: userId }),
     });
     if (!res.ok) {
+      if (isUnauthorized(res)) return { report: null, unauthorized: true };
       console.warn("Failed to fetch progress report:", res.status);
-      return null;
+      return { report: null, unauthorized: false };
     }
     const data = (await res.json()) as { report?: ProgressReport; error?: string };
-    if (data.error || !data.report) return null;
-    return data.report;
+    if (data.error || !data.report) return { report: null, unauthorized: false };
+    return { report: data.report, unauthorized: false };
   } catch (err) {
     console.warn("Progress report fetch failed:", err);
-    return null;
+    return { report: null, unauthorized: false };
   }
 }
 
 /** Force-regenerate the AI progress report after a quiz or chat session. */
-export async function generateProgressReport(userId: string): Promise<ProgressReport | null> {
-  if (!functionsUrl) return null;
+export async function generateProgressReport(
+  userId: string,
+): Promise<{ report: ProgressReport | null; unauthorized: boolean }> {
+  if (!functionsUrl) return { report: null, unauthorized: false };
   try {
+    const token = await getValidAccessToken();
     const res = await fetch(`${functionsUrl}/progress-assessment`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "",
         ...supabaseHeaders,
       },
       body: JSON.stringify({ user_id: userId, force: true }),
     });
     if (!res.ok) {
+      if (isUnauthorized(res)) return { report: null, unauthorized: true };
       console.warn("Failed to generate progress report:", res.status);
-      return null;
+      return { report: null, unauthorized: false };
     }
     const data = (await res.json()) as { report?: ProgressReport; error?: string };
-    if (data.error || !data.report) return null;
-    return data.report;
+    if (data.error || !data.report) return { report: null, unauthorized: false };
+    return { report: data.report, unauthorized: false };
   } catch (err) {
     console.warn("Progress report generation failed:", err);
-    return null;
+    return { report: null, unauthorized: false };
   }
 }
 
@@ -667,14 +677,17 @@ export const [ProgressProvider, useProgress] = createContextHook(() => {
   // to generate it. This prevents idle AI spending.
   const [progressReport, setProgressReport] = useState<ProgressReport | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
+  const [progressReportError, setProgressReportError] = useState<string | null>(null);
 
   // Load a cached report on mount (no AI call — just reads from Supabase cache).
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     void (async () => {
-      const cached = await fetchProgressReport(user.id);
-      if (!cancelled) setProgressReport(cached);
+      const { report, unauthorized } = await fetchProgressReport(user.id);
+      if (cancelled) return;
+      setProgressReport(report);
+      setProgressReportError(unauthorized ? SESSION_EXPIRED_MESSAGE : null);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -683,8 +696,9 @@ export const [ProgressProvider, useProgress] = createContextHook(() => {
     if (!user) return;
     setIsGeneratingReport(true);
     try {
-      const report = await generateProgressReport(user.id);
+      const { report, unauthorized } = await generateProgressReport(user.id);
       if (report) setProgressReport(report);
+      setProgressReportError(unauthorized ? SESSION_EXPIRED_MESSAGE : null);
     } catch (err) {
       console.warn("Failed to refresh progress report:", err);
     } finally {
@@ -709,6 +723,7 @@ export const [ProgressProvider, useProgress] = createContextHook(() => {
     quizBestScores: quizScoresQuery.data ?? [],
     progressReport,
     isGeneratingReport,
+    progressReportError,
     refreshProgressReport,
     isLoading: progressQuery.isLoading || videoViewsQuery.isLoading || quizScoresQuery.isLoading,
     isError: progressQuery.isError || videoViewsQuery.isError || quizScoresQuery.isError,

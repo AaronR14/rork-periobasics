@@ -6,3 +6,7 @@ node_modules
 # Cloudflare Functions
 functions/node_modules
 !functions/package.json
+
+# Wrangler local dev (never commit — .dev.vars holds real Supabase keys)
+functions/.dev.vars
+functions/.wrangler

@@ -30,7 +30,15 @@ export async function setItem(key: string, value: string): Promise<void> {
     }
     return;
   }
-  await SecureStore.setItemAsync(key, value);
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch (err) {
+    // Keychain/Keystore writes can fail (e.g. a value over the platform's
+    // size limit). Swallow rather than crash — worst case the session
+    // isn't persisted and the user has to sign in again next launch,
+    // same as if persistence were simply off.
+    console.warn("secure-storage setItem failed:", key, err);
+  }
 }
 
 export async function deleteItem(key: string): Promise<void> {

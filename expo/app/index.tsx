@@ -28,6 +28,7 @@ import Colors from "@/constants/colors";
 import { useAuth } from "@/hooks/useAuth";
 import { trackVideoView } from "@/hooks/useProgress";
 import { functionsUrl } from "@/lib/config";
+import { getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 
 // react-native-webview is native-only (iOS/Android). On web — which is what
 // the Rork preview uses — it throws "does not support this platform".
@@ -302,6 +303,7 @@ export default function LessonScreen() {
   const videoId = params.videoId || DEFAULT_VIDEO_ID;
   // Bunny player is shown by default — no play-button overlay.
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [metaSessionExpired, setMetaSessionExpired] = useState<boolean>(false);
   const embedUrl = buildEmbedUrl(videoId, isPlaying);
 
   // When the app is opened without a selected video (i.e. cold launch),
@@ -427,8 +429,14 @@ export default function LessonScreen() {
   useEffect(() => {
     const url = `${functionsUrl}/video?libraryId=${BUNNY_LIBRARY_ID}&videoId=${encodeURIComponent(videoId)}`;
     let cancelled = false;
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
+    setMetaSessionExpired(false);
+    getValidAccessToken()
+      .then((token) => fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} }))
+      .then((r) => {
+        if (r.ok) return r.json();
+        if (isUnauthorized(r) && !cancelled) setMetaSessionExpired(true);
+        return Promise.reject(new Error(`status ${r.status}`));
+      })
       .then((data: VideoMeta) => {
         if (cancelled) return;
         const proxiedThumb = data.thumbnailUrl
@@ -488,7 +496,8 @@ export default function LessonScreen() {
   useEffect(() => {
     const url = `${functionsUrl}/videos?libraryId=${BUNNY_LIBRARY_ID}`;
     let cancelled = false;
-    fetch(url)
+    getValidAccessToken()
+      .then((token) => fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} }))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
       .then((data: { items?: VideoListItem[] }) => {
         if (cancelled) return;
@@ -602,6 +611,9 @@ export default function LessonScreen() {
             <View style={styles.info}>
               <Text style={styles.eyebrow}>{meta.module}</Text>
               <Text style={styles.title}>{meta.title}</Text>
+              {metaSessionExpired && (
+                <Text style={styles.sessionExpiredText}>{SESSION_EXPIRED_MESSAGE}</Text>
+              )}
 
               <View style={styles.metaRow}>
                 <Clock size={16} color={Colors.light.warmGreyDark} strokeWidth={2} />
@@ -826,6 +838,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     color: Colors.light.navy,
     marginBottom: 16,
+  },
+  sessionExpiredText: {
+    fontSize: 13,
+    fontWeight: "500" as const,
+    color: Colors.light.warmGreyDark,
+    marginBottom: 12,
   },
   metaRow: {
     flexDirection: "row",

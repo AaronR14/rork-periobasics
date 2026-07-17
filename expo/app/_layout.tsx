@@ -3,9 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { AuthProvider } from "@/hooks/useAuth";
+import Colors from "@/constants/colors";
+import LoginScreen from "@/components/LoginScreen";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
 
@@ -40,6 +43,30 @@ function RootLayoutNav() {
   );
 }
 
+/**
+ * Gates the entire app behind a session: shows a loading state while the
+ * persisted session is being restored (so returning users don't see a
+ * flash of the login screen), then either LoginScreen (no user) or the
+ * real navigator (user present). No route is reachable without a session.
+ */
+function AuthGate() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <View style={styles.bootLoading}>
+        <ActivityIndicator size="large" color={Colors.light.purple} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  return <RootLayoutNav />;
+}
+
 export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync();
@@ -51,7 +78,7 @@ export default function RootLayout() {
         <ProgressProvider>
           <ChatSessionsProvider>
             <GestureHandlerRootView>
-              <RootLayoutNav />
+              <AuthGate />
             </GestureHandlerRootView>
           </ChatSessionsProvider>
         </ProgressProvider>
@@ -59,3 +86,12 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  bootLoading: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

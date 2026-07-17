@@ -1,26 +1,24 @@
 import { createClient, type Session, type User } from "@supabase/supabase-js";
-import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { supabaseConfig } from "@/lib/config";
 import type { AuthUser } from "@/lib/auth-provider";
+import * as secureStorage from "@/lib/secure-storage";
 
 /* ------------------------------------------------------------------ */
 /*  Supabase client with native session persistence                    */
 /* ------------------------------------------------------------------ */
 
 /**
- * Storage adapter for Supabase Auth on React Native.
- * On web, Supabase uses localStorage automatically.
+ * Storage adapter for Supabase Auth. Backed by expo-secure-store (platform
+ * keychain/keystore) on native, and localStorage on web — secure-storage.ts
+ * already does that platform branching internally, so this adapter is the
+ * same on every platform.
  */
-const storageAdapter =
-  Platform.OS === "web"
-    ? undefined
-    : {
-        getItem: (key: string) => AsyncStorage.getItem(key),
-        setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
-        removeItem: (key: string) => AsyncStorage.removeItem(key),
-      };
+const storageAdapter = {
+  getItem: (key: string) => secureStorage.getItem(key),
+  setItem: (key: string, value: string) => secureStorage.setItem(key, value),
+  removeItem: (key: string) => secureStorage.deleteItem(key),
+};
 
 export const supabase = createClient(
   supabaseConfig.url,
@@ -76,6 +74,14 @@ export async function getValidAccessToken(): Promise<string | null> {
   const session = await getCurrentSession();
   return session?.access_token ?? null;
 }
+
+/** True when a backend fetch failed specifically because the session is missing or expired. */
+export function isUnauthorized(response: Response): boolean {
+  return response.status === 401;
+}
+
+/** Standard message to show the user when a request fails due to isUnauthorized(). */
+export const SESSION_EXPIRED_MESSAGE = "Tu sesión expiró. Vuelve a iniciar sesión.";
 
 /** Sync the user's profile row after sign-in so RLS joins work. */
 export async function syncProfile(user: AuthUser) {

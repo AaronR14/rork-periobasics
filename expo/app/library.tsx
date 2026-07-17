@@ -31,7 +31,7 @@ import Svg, { Circle as SvgCircle } from "react-native-svg";
 
 import Colors from "@/constants/colors";
 import ScreenFade from "@/components/ScreenFade";
-import { supabase } from "@/lib/supabase";
+import { supabase, getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 import { functionsUrl, heroImageUri } from "@/lib/config";
 import { getModuleDescription } from "@/data/module-descriptions";
 import { getQuizForModule } from "@/data/quizzes";
@@ -96,6 +96,7 @@ export default function LibraryScreen() {
     quizBestScores,
     progressReport,
     isGeneratingReport,
+    progressReportError,
     refreshProgressReport,
     isLoading: progressLoading,
     refetch,
@@ -168,8 +169,12 @@ export default function LibraryScreen() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
+    getValidAccessToken()
+      .then((token) => fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} }))
+      .then((r) => {
+        if (r.ok) return r.json();
+        return Promise.reject(new Error(isUnauthorized(r) ? SESSION_EXPIRED_MESSAGE : `status ${r.status}`));
+      })
       .then((data: { items?: VideoListItem[] }) => {
         if (cancelled) return;
         const items = Array.isArray(data.items) ? data.items : [];
@@ -279,11 +284,11 @@ export default function LibraryScreen() {
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
-          {loading ? (
+          {loading && activeTab !== "progress" ? (
             <View style={styles.centerState}>
               <ActivityIndicator size="large" color={Colors.light.purple} />
             </View>
-          ) : error ? (
+          ) : error && activeTab === "modules" ? (
             <View style={styles.centerState}>
               <Text style={styles.errorTitle}>No se pudieron cargar los videos</Text>
               <Text style={styles.errorDetail}>{error}</Text>
@@ -351,6 +356,7 @@ export default function LibraryScreen() {
               courseCompletion={courseCompletion}
               progressReport={progressReport}
               isGeneratingReport={isGeneratingReport}
+              progressReportError={progressReportError}
               onRefreshReport={refreshProgressReport}
               videos={videos}
             />
@@ -957,6 +963,7 @@ function ProgressTab({
   courseCompletion,
   progressReport,
   isGeneratingReport,
+  progressReportError,
   onRefreshReport,
   videos,
 }: {
@@ -969,6 +976,7 @@ function ProgressTab({
   courseCompletion: CourseCompletion;
   progressReport: ProgressReport | null;
   isGeneratingReport: boolean;
+  progressReportError: string | null;
   onRefreshReport: () => void;
   videos: VideoListItem[];
 }) {
@@ -1067,6 +1075,9 @@ function ProgressTab({
       {/* ── Tutor insight card ── */}
       {progressReport && (
         <TutorInsightCard report={progressReport} videos={videos} />
+      )}
+      {progressReportError && (
+        <Text style={styles.sessionExpiredText}>{progressReportError}</Text>
       )}
 
       {/* ── Module selector dropdown ── */}
@@ -1440,6 +1451,12 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: Colors.light.warmGrey,
     textAlign: "center",
+  },
+  sessionExpiredText: {
+    fontSize: 12.5,
+    color: Colors.light.warmGreyDark,
+    textAlign: "center",
+    marginTop: 8,
   },
   emptyTitle: {
     fontSize: 15,

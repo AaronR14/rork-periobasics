@@ -1,0 +1,8 @@
+# Local development config for `wrangler dev` ONLY.
+# This does not affect (and is not required for) how Rork deploys the
+# Worker in production — it just lets you run functions/index.ts on your
+# own machine, on localhost, to test changes before they go live.
+
+name = "periobasics-functions-local"
+main = "index.ts"
+compatibility_date = "2026-07-16"

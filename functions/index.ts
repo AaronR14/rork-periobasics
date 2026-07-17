@@ -236,6 +236,297 @@ function getSupabaseCreds(
   return { url, key };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Auth: verify the caller's Supabase session                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Server-configured Supabase project URL/anon key, used ONLY to verify
+ * session tokens. Deliberately reads exclusively from env vars — NEVER
+ * from the X-Supabase-URL / X-Supabase-Anon-Key request headers that
+ * getSupabaseCreds() falls back to for data reads.
+ *
+ * Those headers are client-controlled. If token verification trusted a
+ * client-supplied URL, an attacker could point X-Supabase-URL at their own
+ * server that blindly confirms any token as valid for any user id,
+ * completely defeating the auth check.
+ */
+function getServerSupabaseAuthConfig(
+  env: Record<string, string>,
+): { url: string; key: string } | null {
+  const url = env.SUPABASE_URL ?? env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+  const key = env.SUPABASE_ANON_KEY ?? env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  return url && key ? { url, key } : null;
+}
+
+type SupabaseAuthResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: "unauthenticated" }
+  | { ok: false; reason: "server_misconfigured" };
+
+/**
+ * Verify the "Authorization: Bearer <access_token>" header against
+ * Supabase Auth. Calls Supabase's own /auth/v1/user endpoint to validate
+ * the JWT — the worker never needs the JWT signing secret, only the
+ * (public) anon key, since Supabase does the signature/expiry check on
+ * its side.
+ *
+ * Returns reason "server_misconfigured" (distinct from "unauthenticated")
+ * when SUPABASE_URL/SUPABASE_ANON_KEY aren't set on the server, so callers
+ * can surface a 500 config error instead of silently rejecting everyone
+ * with a misleading 401.
+ */
+async function verifySupabaseUser(
+  env: Record<string, string>,
+  request: Request,
+): Promise<SupabaseAuthResult> {
+  const config = getServerSupabaseAuthConfig(env);
+  if (!config) {
+    console.error("verifySupabaseUser: SUPABASE_URL/SUPABASE_ANON_KEY not configured on the server");
+    return { ok: false, reason: "server_misconfigured" };
+  }
+
+  const authHeader = request.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) return { ok: false, reason: "unauthenticated" };
+
+  try {
+    const resp = await fetch(`${config.url}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: config.key,
+      },
+    });
+    if (!resp.ok) return { ok: false, reason: "unauthenticated" };
+    const data = (await resp.json()) as { id?: string };
+    return typeof data.id === "string" && data.id
+      ? { ok: true, id: data.id }
+      : { ok: false, reason: "unauthenticated" };
+  } catch {
+    return { ok: false, reason: "unauthenticated" };
+  }
+}
+
+/** Standard 401 response for a missing/invalid Supabase session. */
+function unauthorized(message = "Missing or invalid session"): Response {
+  return json({ error: message }, 401);
+}
+
+/** 500 response for missing server-side Supabase configuration. */
+function authServerMisconfigured(): Response {
+  return json({ error: "Server misconfiguration: SUPABASE_URL/SUPABASE_ANON_KEY not set" }, 500);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Auth: admin-only endpoints                                         */
+/* ------------------------------------------------------------------ */
+
+type AdminCheckResult =
+  | { ok: true; id: string }
+  | { ok: false; response: Response };
+
+/**
+ * Verify that the caller is both authenticated (via verifySupabaseUser)
+ * AND present in the public.admins table. Used to gate one-off maintenance
+ * endpoints (e.g. /classify-transcripts) that regular app users should
+ * never be able to reach.
+ *
+ * Distinguishes "not logged in" (401) from "logged in but not an admin"
+ * (403) — the caller's identity is verified before the permission check,
+ * so a non-admin gets a clear "forbidden", not a misleading "unauthorized".
+ *
+ * The admins lookup runs with the caller's own access token (not a
+ * service_role key, which this worker never holds), so it relies on a
+ * Supabase RLS policy on public.admins that lets an authenticated user
+ * read only their own row (auth.uid() = user_id). No INSERT/UPDATE policy
+ * should exist for that table — admin status is granted manually via the
+ * Supabase dashboard, never through the app.
+ */
+async function verifyIsAdmin(
+  env: Record<string, string>,
+  request: Request,
+): Promise<AdminCheckResult> {
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return {
+      ok: false,
+      response: authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized(),
+    };
+  }
+
+  const config = getServerSupabaseAuthConfig(env);
+  if (!config) {
+    return { ok: false, response: authServerMisconfigured() };
+  }
+
+  const authHeader = request.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+
+  try {
+    const resp = await fetch(
+      `${config.url}/rest/v1/admins?user_id=eq.${encodeURIComponent(authResult.id)}&select=user_id`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: config.key,
+        },
+      },
+    );
+    if (resp.ok) {
+      const rows = (await resp.json()) as Array<{ user_id: string }>;
+      if (rows.length > 0) {
+        return { ok: true, id: authResult.id };
+      }
+    }
+  } catch (err) {
+    console.error("verifyIsAdmin: admins table lookup failed:", err);
+  }
+
+  return { ok: false, response: json({ error: "Forbidden: admin access required" }, 403) };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rate limiting: shared budget for the AI/paid-quota endpoints       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Best-effort, in-process rate limiter keyed by verified user id — NOT a
+ * globally exact limit. Cloudflare can run multiple isolates of this
+ * Worker across colos / under load, and each isolate holds its own copy
+ * of this Map (reset whenever an isolate is recycled), so a determined,
+ * geographically distributed abuser could in theory exceed these numbers
+ * by some multiple.
+ *
+ * This is a deliberate tradeoff: Cloudflare's exact alternatives (native
+ * Rate Limiting Rules, a Workers `ratelimit` binding, or Durable Objects)
+ * all require adding a binding/rule to the *deployed* wrangler.toml or
+ * the Cloudflare dashboard — configuration this project's deploy pipeline
+ * (managed by Rork) doesn't currently expose to us. This in-memory
+ * version needs zero extra infra and stops the realistic threat (one
+ * client hammering an endpoint, or a client-side retry storm).
+ */
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_CALLS_PER_MINUTE = 20;
+const MAX_CALLS_PER_DAY = 300;
+
+type RateLimitBucket = {
+  minuteCount: number;
+  minuteWindowStart: number;
+  dayCount: number;
+  dayWindowStart: number;
+};
+const rateLimitBuckets = new Map<string, RateLimitBucket>();
+
+type RateLimitCheck =
+  | { ok: true }
+  | { ok: false; retryAfterSeconds: number; reason: "minute" | "day" };
+
+/**
+ * BEST-EFFORT ONLY — not a guaranteed limit. `rateLimitBuckets` lives in
+ * this isolate's memory, and Cloudflare recycles/replaces Worker isolates
+ * routinely (idle eviction, deploys, load-based scaling). Every time that
+ * happens, the Map is gone and every user's counters silently reset to
+ * zero. A single client is very likely to get caught by the per-minute
+ * check (short window, unlikely to straddle a recycle), but the per-day
+ * check is meaningfully weaker: over 24 hours the odds of at least one
+ * isolate recycle are high, so a user could plausibly get several fresh
+ * 300-call budgets in a single day just by chance. Do not treat this as a
+ * hard cost ceiling — it raises the bar against casual/accidental abuse,
+ * it does not eliminate it. See the block comment above this section for
+ * why a globally-accurate mechanism (Cloudflare Rate Limiting / KV /
+ * Durable Objects) isn't available to this deployment right now.
+ */
+function checkRateLimit(userId: string): RateLimitCheck {
+  const now = Date.now();
+
+  // Opportunistic cleanup so the map doesn't grow unbounded over the
+  // isolate's lifetime.
+  if (rateLimitBuckets.size > 10_000) {
+    for (const [id, b] of rateLimitBuckets) {
+      if (now - b.dayWindowStart >= DAY_MS) rateLimitBuckets.delete(id);
+    }
+  }
+
+  let bucket = rateLimitBuckets.get(userId);
+  if (!bucket) {
+    bucket = { minuteCount: 0, minuteWindowStart: now, dayCount: 0, dayWindowStart: now };
+    rateLimitBuckets.set(userId, bucket);
+  }
+
+  if (now - bucket.minuteWindowStart >= MINUTE_MS) {
+    bucket.minuteCount = 0;
+    bucket.minuteWindowStart = now;
+  }
+  if (now - bucket.dayWindowStart >= DAY_MS) {
+    bucket.dayCount = 0;
+    bucket.dayWindowStart = now;
+  }
+
+  if (bucket.minuteCount >= MAX_CALLS_PER_MINUTE) {
+    return {
+      ok: false,
+      reason: "minute",
+      retryAfterSeconds: Math.ceil((bucket.minuteWindowStart + MINUTE_MS - now) / 1000),
+    };
+  }
+  if (bucket.dayCount >= MAX_CALLS_PER_DAY) {
+    return {
+      ok: false,
+      reason: "day",
+      retryAfterSeconds: Math.ceil((bucket.dayWindowStart + DAY_MS - now) / 1000),
+    };
+  }
+
+  bucket.minuteCount++;
+  bucket.dayCount++;
+  return { ok: true };
+}
+
+/** 429 response with a message the app can show directly to the student. */
+function rateLimited(retryAfterSeconds: number, reason: "minute" | "day"): Response {
+  const message =
+    reason === "minute"
+      ? "Estás enviando mensajes muy rápido. Espera unos segundos e inténtalo de nuevo."
+      : "Alcanzaste el límite de uso del tutor por hoy. Vuelve a intentarlo mañana.";
+  return new Response(
+    JSON.stringify({ error: "rate_limited", message, retryAfterSeconds }),
+    {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSeconds),
+        ...CORS_HEADERS,
+      },
+    },
+  );
+}
+
+/**
+ * Auth + rate-limit gate shared by the endpoints that only need "is this a
+ * real logged-in user" (no specific role) plus abuse protection, since
+ * each call costs money (Gemini) or shared third-party quota.
+ */
+async function verifyRateLimitedUser(
+  env: Record<string, string>,
+  request: Request,
+): Promise<{ ok: true; id: string } | { ok: false; response: Response }> {
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return {
+      ok: false,
+      response: authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized(),
+    };
+  }
+
+  const limit = checkRateLimit(authResult.id);
+  if (!limit.ok) {
+    return { ok: false, response: rateLimited(limit.retryAfterSeconds, limit.reason) };
+  }
+
+  return { ok: true, id: authResult.id };
+}
+
 async function fetchPrompt(
   env: Record<string, string>,
   request: Request,
@@ -830,7 +1121,12 @@ async function geminiChat(
   return { ok: false, text: "Max retries exceeded", status: 429 };
 }
 
-async function handleVideoMeta(env: Record<string, string>, url: URL): Promise<Response> {
+async function handleVideoMeta(env: Record<string, string>, url: URL, request: Request): Promise<Response> {
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized();
+  }
+
   const accessKey = env.BUNNY_ACCESS_KEY;
   if (!accessKey) {
     return json({ error: "Server missing Bunny access key" }, 500);
@@ -901,7 +1197,12 @@ async function handleVideoMeta(env: Record<string, string>, url: URL): Promise<R
   }
 }
 
-async function handleVideoList(env: Record<string, string>, url: URL): Promise<Response> {
+async function handleVideoList(env: Record<string, string>, url: URL, request: Request): Promise<Response> {
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized();
+  }
+
   const accessKey = env.BUNNY_ACCESS_KEY;
   if (!accessKey) {
     return json({ error: "Server missing Bunny access key" }, 500);
@@ -1005,11 +1306,44 @@ async function handleVideoList(env: Record<string, string>, url: URL): Promise<R
   }
 }
 
+/**
+ * Bunny's CDN domain for this project's Pull Zone — real thumbnail URLs
+ * are always a subdomain of this (e.g. vz-XXXXXXXX-XXX.b-cdn.net). No
+ * custom CNAME is configured for this project (confirmed by the project
+ * owner), so a suffix match against the bare Bunny domain is correct here.
+ *
+ * Without this check, /thumb was an open proxy: it would fetch and relay
+ * ANY http(s) URL the caller supplied, letting someone use this Worker to
+ * anonymize requests to arbitrary sites.
+ */
+const BUNNY_CDN_DOMAIN = "b-cdn.net";
+
+function isAllowedThumbHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === BUNNY_CDN_DOMAIN || host.endsWith(`.${BUNNY_CDN_DOMAIN}`);
+}
+
 async function handleThumbProxy(url: URL): Promise<Response> {
   const target = url.searchParams.get("url");
-  if (!target || !/^https?:\/\//i.test(target)) {
-    return json({ error: "Missing or invalid url param" }, 400);
+  if (!target) {
+    return json({ error: "Missing url param" }, 400);
   }
+
+  let targetUrl: URL;
+  try {
+    targetUrl = new URL(target);
+  } catch {
+    return json({ error: "Invalid url param" }, 400);
+  }
+
+  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
+    return json({ error: "Invalid url param" }, 400);
+  }
+
+  if (!isAllowedThumbHost(targetUrl.hostname)) {
+    return json({ error: "URL host not allowed" }, 400);
+  }
+
   try {
     const upstream = await fetch(target, {
       headers: {
@@ -1078,6 +1412,9 @@ async function handleGenerateQuiz(
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
+
+  const gate = await verifyRateLimitedUser(_env, request);
+  if (!gate.ok) return gate.response;
 
   let body: GenerateQuizRequestBody;
   try {
@@ -1282,6 +1619,9 @@ async function handleEvaluateAnswer(
     return json({ error: "Method not allowed" }, 405);
   }
 
+  const gate = await verifyRateLimitedUser(_env, request);
+  if (!gate.ok) return gate.response;
+
   let body: EvaluateAnswerRequestBody;
   try {
     body = (await request.json()) as EvaluateAnswerRequestBody;
@@ -1373,7 +1713,13 @@ Evalúa la respuesta del estudiante y devuelve solo el JSON.`;
 async function handleSuggestVideo(
   env: Record<string, string>,
   url: URL,
+  request: Request,
 ): Promise<Response> {
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized();
+  }
+
   const accessKey = env.BUNNY_ACCESS_KEY;
   if (!accessKey) {
     return json({ error: "Server missing Bunny access key" }, 500);
@@ -1465,7 +1811,8 @@ async function handleSuggestVideo(
 }
 
 interface ProgressAssessmentRequestBody {
-  user_id: string;
+  /** @deprecated ignored — the user id now comes from the verified session token. */
+  user_id?: string;
   /** Force regeneration even if a cached report exists. */
   force?: boolean;
 }
@@ -1738,16 +2085,20 @@ async function handleProgressAssessment(
     return json({ error: "Method not allowed" }, 405);
   }
 
+  // The user id must come from a verified session, never from the request
+  // body — otherwise any caller could read/regenerate another student's
+  // progress report by simply passing a different user_id.
+  const authResult = await verifySupabaseUser(env, request);
+  if (!authResult.ok) {
+    return authResult.reason === "server_misconfigured" ? authServerMisconfigured() : unauthorized();
+  }
+  const userId = authResult.id;
+
   let body: ProgressAssessmentRequestBody;
   try {
     body = (await request.json()) as ProgressAssessmentRequestBody;
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
-  }
-
-  const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
-  if (userId.length === 0) {
-    return json({ error: "user_id is required" }, 400);
   }
 
   // Return cached report if it exists and the client did not ask for a refresh.
@@ -1852,6 +2203,9 @@ async function handleSessionTitle(
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
+
+  const gate = await verifyRateLimitedUser(_env, request);
+  if (!gate.ok) return gate.response;
 
   let body: SessionTitleRequestBody;
   try {
@@ -1996,6 +2350,13 @@ async function handleClassifyTranscripts(
   request: Request,
   env: Record<string, string>,
 ): Promise<Response> {
+  // One-off maintenance endpoint — never meant for regular app users.
+  // Requires a verified session belonging to a user in public.admins.
+  const adminCheck = await verifyIsAdmin(env, request);
+  if (!adminCheck.ok) {
+    return adminCheck.response;
+  }
+
   const { url: supabaseUrl, key: supabaseKey } = getSupabaseCreds(env, request);
   if (!supabaseUrl || !supabaseKey) {
     return json({ error: "Missing Supabase credentials" }, 500);
@@ -2231,11 +2592,11 @@ export default {
     }
 
     if (url.pathname === "/video" || url.pathname.startsWith("/video/")) {
-      return handleVideoMeta(env, url);
+      return handleVideoMeta(env, url, request);
     }
 
     if (url.pathname === "/videos" || url.pathname.startsWith("/videos/")) {
-      return handleVideoList(env, url);
+      return handleVideoList(env, url, request);
     }
 
     if (url.pathname === "/thumb") {
@@ -2251,7 +2612,7 @@ export default {
     }
 
     if (url.pathname === "/suggest-video") {
-      return handleSuggestVideo(env, url);
+      return handleSuggestVideo(env, url, request);
     }
 
     if (url.pathname === "/session-title") {
@@ -2273,6 +2634,9 @@ export default {
     if (request.method !== "POST") {
       return json({ error: "Method not allowed" }, 405);
     }
+
+    const gate = await verifyRateLimitedUser(env, request);
+    if (!gate.ok) return gate.response;
 
     let body: ChatRequestBody;
     try {
