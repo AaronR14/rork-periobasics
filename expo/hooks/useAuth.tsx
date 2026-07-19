@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Platform } from "react-native";
+import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 
 import { supabase, mapUser, getValidAccessToken } from "@/lib/supabase";
@@ -120,22 +121,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         redirectUrl,
       );
 
+      let code: string | null = null;
       if (result.type === "success" && result.url) {
         // Extract the auth code from the redirect URL.
         const url = new URL(result.url);
         // Strip trailing %23 (known Supabase/Go URL parser issue on bare schemes).
-        const code = (url.searchParams.get("code") ?? "").replace(/%23$/, "");
-
-        if (code) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) throw exchangeError;
-
-          // Session is now stored — onAuthStateChange will update user state.
-          const { data: sessionData } = await supabase.auth.getSession();
-          updateUserFromSession(sessionData.session);
-        }
+        code = (url.searchParams.get("code") ?? "").replace(/%23$/, "");
       }
-      // If result.type === "cancel" or "dismiss", user closed the browser — no error.
+
+      // Fallback: Android Chrome Custom Tabs often don't return the redirect URL
+      // to openAuthSessionAsync after the Google consent screen. Listen for the
+      // deep-link redirect to the custom scheme and extract the code there.
+      if (!code) {
+        console.log("[auth] openAuthSessionAsync returned no code; waiting for deep-link redirect...");
+        code = await waitForDeepLinkCode(redirectUrl);
+      }
+
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) throw exchangeError;
+
+        // Session is now stored — onAuthStateChange will update user state.
+        const { data: sessionData } = await supabase.auth.getSession();
+        updateUserFromSession(sessionData.session);
+      }
+      // If result.type === "cancel" or "dismiss" and no deep-link arrives, user closed the browser — no error.
     } catch (err) {
       console.error("Sign in failed:", err);
       setError(err instanceof Error ? err.message : "Sign in failed");
@@ -195,6 +205,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           resolve(null);
         }
       }, 500);
+    });
+  }
+
+  /**
+   * Android fallback: listen for the OAuth deep-link redirect to the custom
+   * scheme and extract the PKCE code. Chrome Custom Tabs sometimes return
+   * control to the app without giving us the final URL, so this catches the
+   * system redirect directly.
+   */
+  function waitForDeepLinkCode(expectedRedirectUrl: string, timeoutMs = 60000): Promise<string | null> {
+    return new Promise((resolve) => {
+      let subscription: { remove: () => void } | null = null;
+      const timer = setTimeout(() => {
+        subscription?.remove();
+        resolve(null);
+      }, timeoutMs);
+
+      subscription = Linking.addEventListener("url", (event) => {
+        const url = event.url;
+        if (!url) return;
+        // Expected URL: rork-...://auth/callback?code=...
+        const expectedPrefix = expectedRedirectUrl.split("?")[0];
+        if (!url.startsWith(expectedPrefix)) return;
+
+        clearTimeout(timer);
+        subscription?.remove();
+        const parsed = new URL(url);
+        const code = (parsed.searchParams.get("code") ?? "").replace(/%23$/, "");
+        console.log("[auth] deep-link code captured:", code ? "yes" : "no");
+        resolve(code || null);
+      });
     });
   }
 
