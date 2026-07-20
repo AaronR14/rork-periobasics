@@ -82,9 +82,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // CONFIRMADO (17 jul 2026): login de Google funciona de punta a punta en
-  // iOS vía Expo Go + QR oficial de Rork. Pendiente: validar el mismo flujo
-  // en Android (mecanismo interno distinto, Chrome Custom Tabs vs
-  // ASWebAuthenticationSession, sin verificar).
+  // iOS vía Expo Go + QR oficial de Rork.
+  // CONFIRMADO (20 jul 2026): login de Google funciona de punta a punta en
+  // Android también (emulador Pixel 8 Pro / Play Store, dev build local vía
+  // `npx expo run:android`). openAuthSessionAsync devolvió el code
+  // directamente en el primer intento — el fallback waitForDeepLinkCode de
+  // abajo no llegó a activarse en esta prueba. Se deja el fallback igual,
+  // por si Chrome Custom Tabs en un dispositivo físico real se comporta
+  // distinto al emulador.
 
   // TODO(App Store release): the UI (LoginScreen) only offers "google" today.
   // Apple requires "Sign in with Apple" as an alternative once this app goes
