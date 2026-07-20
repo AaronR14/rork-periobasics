@@ -1022,9 +1022,11 @@ const DEFAULT_VIDEO_ID = "5bce5273-abe3-48f3-8289-a5380442c68c";
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Toolkit-URL, X-Toolkit-Key, X-Supabase-URL, X-Supabase-Anon-Key",
+  // Authorization is required: the client sends `Authorization: Bearer <token>`
+  // for Supabase-authenticated endpoints (/videos, /chat, etc.). Without it
+  // here, the browser's CORS preflight rejects the request → "Failed to fetch".
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Toolkit-URL, X-Toolkit-Key, X-Supabase-URL, X-Supabase-Anon-Key",
 };
-
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
