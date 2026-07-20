@@ -8,13 +8,15 @@
  * ── Porting guide ──────────────────────────────────────────────
  * 1. Replace the `env` accessor with your own env-reading mechanism.
  * 2. Set `functionsUrl` to your backend URL.
- * 3. Set `deepLinkScheme` to your app's custom scheme.
+ * 3. Set `expo.scheme` in app.json to your app's custom scheme (Linking.
+ *    createURL() in this file reads it from there automatically).
  * 4. Set `heroImageUri` to a bundled asset or your own CDN URL.
  * 5. The rest of the app (Supabase client, auth hook, UI) stays as-is.
  * ──────────────────────────────────────────────────────────────
  */
 
 import { Platform } from "react-native";
+import * as Linking from "expo-linking";
 
 /* ------------------------------------------------------------------ */
 /*  Env accessor                                                       */
@@ -49,26 +51,29 @@ export const supabaseHeaders = {
 /*  Deep-link / OAuth redirect                                         */
 /* ------------------------------------------------------------------ */
 
-/** Deep-link callback scheme, e.g. `rork-<projectId>`. */
-export const deepLinkScheme: string = env("EXPO_PUBLIC_PROJECT_ID")
-  ? `rork-${env("EXPO_PUBLIC_PROJECT_ID")}`
-  : "myapp";
-
 /**
  * OAuth redirect URL.
- * Native: `<scheme>://auth/callback`
+ * Native, standalone/dev-client build: `<scheme>://auth/callback`.
+ * Native, Expo Go: `exp://<lan-ip>:<port>/--/auth/callback` — Expo Go can't
+ * register the app's custom scheme in its manifest (it's a single shared
+ * app), so a hardcoded `<scheme>://` redirect never reaches it. Linking.
+ * createURL() detects Expo Go vs. a standalone build and picks the right
+ * form; unlike Android, iOS's ASWebAuthenticationSession intercepts the
+ * callback scheme directly within the auth session, which is why this
+ * only ever broke on Android.
  * Web: current page origin + path. Supabase redirects the popup back to
  * the same page, where we extract the `code` param and exchange it.
  *
- * IMPORTANT: This exact URL must be added to Supabase Dashboard →
- * Authentication → URL Configuration → Redirect URLs.
+ * IMPORTANT: Every form this can take must be added to Supabase Dashboard →
+ * Authentication → URL Configuration → Redirect URLs (the Expo Go form is
+ * dynamic per dev session, so that entry has to be a wildcard).
  */
 export const redirectUrl: string =
   Platform.OS === "web"
     ? (typeof window !== "undefined"
         ? window.location.origin + window.location.pathname
         : "")
-    : `${deepLinkScheme}://auth/callback`;
+    : Linking.createURL("auth/callback");
 
 /* ------------------------------------------------------------------ */
 /*  Backend functions URL                                              */

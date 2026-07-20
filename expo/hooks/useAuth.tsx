@@ -101,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsSigningIn(true);
     setError(null);
     try {
+      console.log(`[auth] redirectUrl = ${redirectUrl}`);
       // Both native and web use skipBrowserRedirect so we control the flow:
       // - Native: openAuthSessionAsync (system browser / Custom Tab)
       // - Web: window.open popup (escapes iframe restrictions)
