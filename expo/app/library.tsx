@@ -89,7 +89,7 @@ export default function LibraryScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [selectedModule, setSelectedModule] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
-  const { user, isLoading: authLoading, signIn, isSigningIn } = useAuth();
+  const { user, isLoading: authLoading, signIn, signOut, isSigningIn } = useAuth();
   const {
     progressRows,
     videoViews,
@@ -350,6 +350,7 @@ export default function LibraryScreen() {
               user={user}
               authLoading={authLoading}
               signIn={signIn}
+              signOut={signOut}
               isSigningIn={isSigningIn}
               progressLoading={progressLoading}
               moduleSummaries={moduleSummaries}
@@ -957,6 +958,7 @@ function ProgressTab({
   user,
   authLoading,
   signIn,
+  signOut,
   isSigningIn,
   progressLoading,
   moduleSummaries,
@@ -970,6 +972,7 @@ function ProgressTab({
   user: { id: string; email: string; name?: string; picture?: string } | null;
   authLoading: boolean;
   signIn: (provider: "google" | "apple") => Promise<void>;
+  signOut: () => Promise<void>;
   isSigningIn: boolean;
   progressLoading: boolean;
   moduleSummaries: ModuleProgressSummary[];
@@ -1146,6 +1149,16 @@ function ProgressTab({
         </>
       )}
 
+      {/* ── Sign out ── */}
+      <Pressable
+        onPress={signOut}
+        style={({ pressed }) => [
+          styles.signOutButton,
+          pressed && styles.signOutButtonPressed,
+        ]}
+      >
+        <Text style={styles.signOutButtonText}>Cerrar sesión</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1603,6 +1616,23 @@ evaluationsList: {
   },
   progressContainer: {
     gap: 16,
+  },
+  signOutButton: {
+    marginTop: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.hairline,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+  },
+  signOutButtonPressed: {
+    backgroundColor: Colors.light.chalk,
+  },
+  signOutButtonText: {
+    fontSize: 15,
+    fontWeight: "600" as const,
+    color: Colors.light.warmGreyDark,
   },
   overallCard: {
     flexDirection: "row",
