@@ -132,9 +132,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fallback: Android Chrome Custom Tabs often don't return the redirect URL
       // to openAuthSessionAsync after the Google consent screen. Listen for the
       // deep-link redirect to the custom scheme and extract the code there.
+      //
+      // When openAuthSessionAsync itself reported "success" but we just
+      // couldn't parse a code, the browser session genuinely completed — give
+      // the deep link the full timeout. When it reported "cancel"/"dismiss",
+      // the user most likely closed it on purpose; still listen briefly in
+      // case that result was actually Android routing the redirect around
+      // the library instead of through it, but don't make a real
+      // cancellation hang the sign-in button for a full minute.
       if (!code) {
-        console.log("[auth] openAuthSessionAsync returned no code; waiting for deep-link redirect...");
-        code = await waitForDeepLinkCode(redirectUrl);
+        const fallbackTimeoutMs = result.type === "success" ? 60000 : 3000;
+        console.log(`[auth] openAuthSessionAsync returned no code (type=${result.type}); waiting up to ${fallbackTimeoutMs}ms for deep-link redirect...`);
+        code = await waitForDeepLinkCode(redirectUrl, fallbackTimeoutMs);
       }
 
       if (code) {
