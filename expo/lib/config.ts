@@ -26,10 +26,26 @@ import * as Linking from "expo-linking";
  * Read a public env var. Expo inlines `EXPO_PUBLIC_*` at build time.
  */
 function env(key: string): string | undefined {
-  if (typeof process !== "undefined" && process.env?.[key]) {
-    return process.env[key];
+  if (typeof process === "undefined") return undefined;
+
+  // Expo only guarantees compile-time replacement for static property access,
+  // not dynamic indexing like process.env[key].
+  switch (key) {
+    case "EXPO_PUBLIC_PROJECT_ID":
+      return process.env.EXPO_PUBLIC_PROJECT_ID;
+    case "EXPO_PUBLIC_SUPABASE_URL":
+      return process.env.EXPO_PUBLIC_SUPABASE_URL;
+    case "EXPO_PUBLIC_SUPABASE_ANON_KEY":
+      return process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    case "EXPO_PUBLIC_AUTH_REDIRECT_URL":
+      return process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL;
+    case "EXPO_PUBLIC_RORK_FUNCTIONS_URL":
+      return process.env.EXPO_PUBLIC_RORK_FUNCTIONS_URL;
+    case "EXPO_PUBLIC_FUNCTIONS_URL":
+      return process.env.EXPO_PUBLIC_FUNCTIONS_URL;
+    default:
+      return undefined;
   }
-  return undefined;
 }
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +89,7 @@ export const redirectUrl: string =
     ? (typeof window !== "undefined"
         ? window.location.origin + window.location.pathname
         : "")
-    : Linking.createURL("auth/callback");
+    : (env("EXPO_PUBLIC_AUTH_REDIRECT_URL") ?? Linking.createURL("auth/callback"));
 
 /* ------------------------------------------------------------------ */
 /*  Backend functions URL                                              */
