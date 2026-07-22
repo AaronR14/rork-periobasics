@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.fse076rw9ejy1s1vel0nq"
+      "bundleIdentifier": "app.rork.fse076rw9ejy1s1vel0nq",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -42,6 +45,15 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": "https://rork.com/"
+      },
+      "eas": {
+        "projectId": "61201033-e64d-4742-8296-af309a4bec49"
+      }
+    },
+    "owner": "aaronr14s-team"
   }
 }
