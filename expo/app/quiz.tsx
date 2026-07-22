@@ -39,12 +39,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle as SvgCircle } from "react-native-svg";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePostHog } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import ScreenFade from "@/components/ScreenFade";
 import { QuizQuestion, getQuizForModule } from "@/data/quizzes";
 import { submitQuizAttempt } from "@/hooks/useProgress";
 import { useAuth } from "@/hooks/useAuth";
+import { AnalyticsEvent } from "@/lib/posthog";
 
 type QuizStep = "intro" | "question" | "result" | "review";
 type SubmissionState = "idle" | "saving" | "saved" | "failed" | "skipped";
@@ -70,6 +72,7 @@ export default function QuizScreen() {
   const quiz = useMemo(() => getQuizForModule(moduleName), [moduleName]);
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   const [step, setStep] = useState<QuizStep>("intro");
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -171,6 +174,15 @@ export default function QuizScreen() {
       totalQuestions: v.total,
     }));
 
+    // Usage event: module + score/duration only — never the answers themselves.
+    const totalCorrect = subtopicResults.reduce((sum, r) => sum + r.correctAnswers, 0);
+    const totalQuestions = subtopicResults.reduce((sum, r) => sum + r.totalQuestions, 0);
+    posthog.capture(AnalyticsEvent.QuizCompleted, {
+      module: moduleName,
+      score_percent: totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0,
+      duration_seconds: elapsedSeconds,
+    });
+
     submitQuizAttempt({
       userId: user.id,
       moduleName,
@@ -191,7 +203,7 @@ export default function QuizScreen() {
         setSubmissionState("failed");
         console.error("Quiz submission failed:", err);
       });
-  }, [stopTimer, user, quiz, moduleName, selectedAnswers, elapsedSeconds, queryClient]);
+  }, [stopTimer, user, quiz, moduleName, selectedAnswers, elapsedSeconds, queryClient, posthog]);
 
   const dismissSuccessModal = useCallback(() => {
     setShowSuccessModal(false);

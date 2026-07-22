@@ -5,12 +5,14 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { PostHogProvider } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import LoginScreen from "@/components/LoginScreen";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
+import { posthogAutocapture, posthogConfig } from "@/lib/posthog";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -74,15 +76,29 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ProgressProvider>
-          <ChatSessionsProvider>
-            <GestureHandlerRootView>
-              <AuthGate />
-            </GestureHandlerRootView>
-          </ChatSessionsProvider>
-        </ProgressProvider>
-      </AuthProvider>
+      {/*
+        Above AuthProvider (not inside AuthGate) on purpose: this way
+        PostHog also captures pre-login screen views on LoginScreen (how
+        many people see it vs. actually sign in), tagged to an anonymous
+        distinct_id. useAuth() calls posthog.identify() with the real
+        Supabase user_id once login succeeds, which merges those anonymous
+        events into the identified user's timeline.
+      */}
+      <PostHogProvider
+        apiKey={posthogConfig.apiKey}
+        options={{ host: posthogConfig.host }}
+        autocapture={posthogAutocapture}
+      >
+        <AuthProvider>
+          <ProgressProvider>
+            <ChatSessionsProvider>
+              <GestureHandlerRootView>
+                <AuthGate />
+              </GestureHandlerRootView>
+            </ChatSessionsProvider>
+          </ProgressProvider>
+        </AuthProvider>
+      </PostHogProvider>
     </QueryClientProvider>
   );
 }

@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { usePostHog } from "posthog-react-native";
 
 import { supabase, mapUser, getValidAccessToken } from "@/lib/supabase";
 import { redirectUrl } from "@/lib/config";
+import { AnalyticsEvent } from "@/lib/posthog";
 import type { AuthUser } from "@/lib/auth-provider";
 
 // Required for web popup handling.
@@ -24,6 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const posthog = usePostHog();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -47,15 +50,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen for auth state changes (token refresh, sign out, etc.)
   useEffect(() => {
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         if (!isMountedRef.current) return;
         updateUserFromSession(session);
+
+        // Fire user_signed_up exactly once, on a genuine new account — not
+        // on every login. Supabase fires "SIGNED_IN" both for brand-new
+        // accounts and for a returning user's normal login, so we
+        // disambiguate using the account's own timestamps: on first-ever
+        // sign-in, created_at and last_sign_in_at are the same instant
+        // (within a few seconds, allowing for request latency); on a
+        // later login, last_sign_in_at has moved on. This intentionally
+        // ignores "INITIAL_SESSION" (fired once when this listener first
+        // attaches, including on a restored session at app boot) so we
+        // never re-fire it for existing users just opening the app.
+        if (event === "SIGNED_IN" && session?.user?.created_at && session.user.last_sign_in_at) {
+          const createdMs = new Date(session.user.created_at).getTime();
+          const lastSignInMs = new Date(session.user.last_sign_in_at).getTime();
+          if (Math.abs(lastSignInMs - createdMs) < 5000) {
+            posthog.capture(AnalyticsEvent.UserSignedUp);
+          }
+        }
       },
     );
     return () => {
       subscription.subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep PostHog's identified user in sync with the Supabase session: once
+  // login resolves, identify() ties this device's (possibly anonymous)
+  // event history to the real user_id; reset() on sign-out starts a fresh
+  // anonymous id so a later login on the same device isn't misattributed
+  // to the previous user. Gated on !isLoading so the initial mount (before
+  // session restore resolves) doesn't fire a spurious reset().
+  useEffect(() => {
+    if (isLoading) return;
+    if (user) {
+      // email only — no name sent to PostHog (per user decision).
+      posthog.identify(user.id, { email: user.email });
+    } else {
+      posthog.reset();
+    }
+  }, [user, isLoading, posthog]);
 
   async function restoreSession() {
     try {

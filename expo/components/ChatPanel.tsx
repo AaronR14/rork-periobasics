@@ -32,12 +32,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/hooks/useAuth";
 import { submitChatAnswer, type ChatCompetencyEvent } from "@/hooks/useProgress";
 import { useChatSessions, type ChatSession, GREETING_TEXT } from "@/hooks/useChatSessions";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
+import { AnalyticsEvent } from "@/lib/posthog";
 import { getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 
 export type ChatRole = "alumno" | "tutor";
@@ -262,6 +264,7 @@ export default function ChatPanel({
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const { user, isLoading: authLoading, signIn, isSigningIn } = useAuth();
+  const posthog = usePostHog();
   const {
     sessions,
     createSessionOnFirstMessage,
@@ -390,6 +393,9 @@ export default function ChatPanel({
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+
+    // Usage event only — never the message text itself.
+    posthog.capture(AnalyticsEvent.TutorMessageSent, { phase: phaseRef.current });
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -611,7 +617,7 @@ export default function ChatPanel({
         }
         evaluatingRef.current = false;
       });
-  }, [draft, messages, user, saveMessage, getTutorMemory, createSessionOnFirstMessage, generateAndSaveTitle, submitChatAnswer]);
+  }, [draft, messages, user, saveMessage, getTutorMemory, createSessionOnFirstMessage, generateAndSaveTitle, submitChatAnswer, posthog]);
 
   const handleOpenVideo = useCallback((video: VideoSuggestion) => {
     if (Platform.OS !== "web") {
@@ -933,6 +939,12 @@ export default function ChatPanel({
                 maxLength={600}
                 testID="chat-input"
                 editable={!isLoadingSession}
+                // PostHog autocapture opt-out (noCaptureProp, see lib/posthog.ts):
+                // excludes this field and its children from autocapture entirely —
+                // what the student types to the tutor must never leave the device.
+                // (Spread, not a plain attribute: TextInputProps has no
+                // "ph-no-capture" field, so TS would reject it as a named prop.)
+                {...{ "ph-no-capture": true }}
               />
             </View>
             <Pressable

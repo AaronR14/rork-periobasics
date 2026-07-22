@@ -22,12 +22,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 
 import ScreenFade from "@/components/ScreenFade";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/hooks/useAuth";
 import { trackVideoView } from "@/hooks/useProgress";
 import { functionsUrl } from "@/lib/config";
+import { AnalyticsEvent } from "@/lib/posthog";
 import { getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 
 // react-native-webview is native-only (iOS/Android). On web — which is what
@@ -289,6 +291,7 @@ export default function LessonScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { user } = useAuth();
+  const posthog = usePostHog();
   // Route params: videoId (Bunny GUID) and optional pre-fetched metadata
   // passed from the library page so the player shows info instantly.
   const params = useLocalSearchParams<{
@@ -422,7 +425,12 @@ export default function LessonScreen() {
       videoTitle: params.title,
       moduleName: params.module,
     });
-  }, [user, params.videoId, params.title, params.module]);
+    // Usage event: which video, which module — not tied to any answer content.
+    posthog.capture(AnalyticsEvent.VideoCompleted, {
+      video_guid: params.videoId,
+      module: params.module ?? null,
+    });
+  }, [user, params.videoId, params.title, params.module, posthog]);
 
   // Fetch real metadata from Bunny Stream via the worker (keeps the access
   // key private). Falls back to hardcoded values if the request fails.
