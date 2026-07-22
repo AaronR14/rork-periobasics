@@ -14,11 +14,24 @@
 
 import type { PostHogAutocaptureOptions } from "posthog-react-native";
 
-function env(key: string): string | undefined {
-  if (typeof process !== "undefined" && process.env?.[key]) {
-    return process.env[key];
+/**
+ * Expo only guarantees compile-time replacement of `EXPO_PUBLIC_*` vars for
+ * static property access, not dynamic indexing like `process.env[key]` —
+ * see the fix in lib/config.ts (commit cf13a8f). Mirrored here with an
+ * explicit switch per var, for the same reason: without this, these two
+ * vars would resolve fine in the local dev server (where process.env is
+ * live at runtime) but silently stay undefined in an EAS production build.
+ */
+function env(key: "EXPO_PUBLIC_POSTHOG_API_KEY" | "EXPO_PUBLIC_POSTHOG_HOST"): string | undefined {
+  if (typeof process === "undefined") return undefined;
+  switch (key) {
+    case "EXPO_PUBLIC_POSTHOG_API_KEY":
+      return process.env.EXPO_PUBLIC_POSTHOG_API_KEY;
+    case "EXPO_PUBLIC_POSTHOG_HOST":
+      return process.env.EXPO_PUBLIC_POSTHOG_HOST;
+    default:
+      return undefined;
   }
-  return undefined;
 }
 
 export const posthogConfig = {
