@@ -1199,6 +1199,25 @@ async function handleVideoMeta(env: Record<string, string>, url: URL, request: R
   }
 }
 
+/**
+ * A request to the Bunny API failed. Always reported as 502, never with
+ * Bunny's own status code.
+ *
+ * Forwarding the upstream status verbatim made a rotated or revoked
+ * BUNNY_ACCESS_KEY indistinguishable from an expired user session: Bunny
+ * answers 401, the client's isUnauthorized() (expo/lib/supabase.ts) treats any
+ * 401 as "Tu sesión expiró", and users were sent back to the login screen to
+ * fix a problem that logging in again could never fix. A 401 out of this
+ * Worker now means exactly one thing — the caller's Supabase token is bad.
+ *
+ * The upstream status is kept in the body for diagnosis, where it can't be
+ * mistaken for this Worker's own verdict on the caller.
+ */
+function bunnyUpstreamFailure(error: string, upstreamStatus: number, detail: string): Response {
+  console.error(`${error}: Bunny responded ${upstreamStatus}`, detail.slice(0, 500));
+  return json({ error, detail, upstreamStatus }, 502);
+}
+
 async function handleVideoList(env: Record<string, string>, url: URL, request: Request): Promise<Response> {
   const authResult = await verifySupabaseUser(env, request);
   if (!authResult.ok) {
@@ -1226,15 +1245,25 @@ async function handleVideoList(env: Record<string, string>, url: URL, request: R
     const collectionsResp = await fetch(collectionsEndpoint, {
       headers: { Accept: "application/json", AccessKey: accessKey },
     });
-    if (collectionsResp.ok) {
-      const collData = (await collectionsResp.json()) as { items?: Array<Record<string, unknown>> };
-      const collItems = Array.isArray(collData.items) ? collData.items : [];
-      for (const c of collItems) {
-        const guid = typeof c.guid === "string" ? c.guid : "";
-        const name = typeof c.name === "string" ? c.name : "";
-        if (guid && name) {
-          collectionMap.set(guid, normaliseModuleName(name));
-        }
+    // A failure here used to be swallowed, leaving collectionMap empty — and
+    // since an unknown collection falls back to "Módulo 1" further down, the
+    // entire library would silently collapse into one module rather than
+    // report that anything went wrong. Fatal: the grouping this endpoint
+    // promises cannot be produced without these names.
+    if (!collectionsResp.ok) {
+      return bunnyUpstreamFailure(
+        "Bunny collections request failed",
+        collectionsResp.status,
+        await collectionsResp.text(),
+      );
+    }
+    const collData = (await collectionsResp.json()) as { items?: Array<Record<string, unknown>> };
+    const collItems = Array.isArray(collData.items) ? collData.items : [];
+    for (const c of collItems) {
+      const guid = typeof c.guid === "string" ? c.guid : "";
+      const name = typeof c.name === "string" ? c.name : "";
+      if (guid && name) {
+        collectionMap.set(guid, normaliseModuleName(name));
       }
     }
 
@@ -1245,8 +1274,7 @@ async function handleVideoList(env: Record<string, string>, url: URL, request: R
       headers: { Accept: "application/json", AccessKey: accessKey },
     });
     if (!upstream.ok) {
-      const errText = await upstream.text();
-      return json({ error: "Bunny list request failed", detail: errText }, upstream.status as 400 | 404 | 500 | 502);
+      return bunnyUpstreamFailure("Bunny list request failed", upstream.status, await upstream.text());
     }
     const data = (await upstream.json()) as { items?: Array<Record<string, unknown>> };
     const rawItems = Array.isArray(data.items) ? data.items : [];
