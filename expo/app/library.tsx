@@ -79,6 +79,29 @@ function formatTotalDuration(totalSeconds: number): string {
   return `${m} min`;
 }
 
+/**
+ * Sort key for a module name ("Módulo 1", "Módulo 2", …).
+ *
+ * The backend returns videos newest-first (`orderBy=date`), so grouping them
+ * by order of appearance listed the most recently uploaded module first — with
+ * four modules that meant the dropdown read "4, 3, 2, 1" and the library opened
+ * on the last module instead of the first.
+ *
+ * Modules whose name has no trailing number sort last: the backend passes a
+ * Bunny collection name through unchanged when it doesn't match its "Módulo N"
+ * pattern (see normaliseModuleName in functions/index.ts), so an arbitrarily
+ * named collection must not land in the middle of the numbered sequence.
+ */
+function moduleSortKey(name: string): number {
+  const match = name.match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+/** Orders module names numerically, falling back to alphabetical for ties. */
+function compareModuleNames(a: string, b: string): number {
+  return moduleSortKey(a) - moduleSortKey(b) || a.localeCompare(b);
+}
+
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const [videos, setVideos] = useState<VideoListItem[]>([]);
@@ -180,8 +203,13 @@ export default function LibraryScreen() {
         const items = Array.isArray(data.items) ? data.items : [];
         setVideos(items);
         setLoading(false);
-        // Default to the first module (Módulo 1) so its videos show immediately.
-        const firstModuleName = items.find((v) => v.module)?.module ?? "Módulo 1";
+        // Default to the lowest-numbered module so its videos show immediately.
+        // Picking items[0] here would follow Bunny's newest-first order and
+        // open on the most recent module (see moduleSortKey).
+        const firstModuleName = items
+          .map((v) => v.module)
+          .filter((m): m is string => Boolean(m))
+          .sort(compareModuleNames)[0] ?? "Módulo 1";
         setSelectedModule(firstModuleName);
       })
       .catch((e: unknown) => {
@@ -225,10 +253,12 @@ export default function LibraryScreen() {
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push(v);
     }
-    const moduleGroups: ModuleGroup[] = Array.from(grouped.entries()).map(([name, items]) => ({
-      name,
-      videos: items.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })),
-    }));
+    const moduleGroups: ModuleGroup[] = Array.from(grouped.entries())
+      .map(([name, items]) => ({
+        name,
+        videos: items.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })),
+      }))
+      .sort((a, b) => compareModuleNames(a.name, b.name));
     // Videos for the currently selected module.
     const activeGroup = moduleGroups.find((g) => g.name === selectedModule) ?? moduleGroups[0];
     return { totalDuration, moduleGroups, activeGroup };
