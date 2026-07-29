@@ -6,6 +6,7 @@ import React, { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { PostHogProvider, usePostHog } from "posthog-react-native";
+import { LogBox } from "react-native";
 
 import Colors from "@/constants/colors";
 import LoginScreen from "@/components/LoginScreen";
@@ -13,6 +14,10 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
 import { posthogAutocapture, posthogConfig, SafePostHogContext, noopPostHog } from "@/lib/posthog";
+
+// PostHog flush failures are non-fatal and should not show a red error screen
+// to the user. They're logged to the console instead.
+LogBox.ignoreLogs(["Error while flushing PostHog", "PostHogFetchNetworkError"]);
 
 /**
  * When PostHog is enabled, this inner component grabs the real client from

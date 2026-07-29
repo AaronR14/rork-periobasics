@@ -115,6 +115,16 @@ export const posthogAutocapture: PostHogAutocaptureOptions = {
 };
 
 /**
+ * Suppress noisy PostHog network flush errors so they don't surface as a
+ * red LogBox screen in the app. These are non-fatal and often happen on
+ * restrictive mobile networks; losing analytics is okay, crashing the UX is not.
+ */
+export const posthogErrorHandler = (error: Error | unknown): void => {
+  // eslint-disable-next-line no-console
+  console.debug("PostHog flush error (suppressed):", error);
+};
+
+/**
  * Manually tracked business events. Keep every payload free of user-authored
  * text (chat messages, quiz/exam answers) — ids, counts, durations, and
  * booleans only. See CLAUDE.md for the full list of suggested events and
