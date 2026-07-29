@@ -12,7 +12,48 @@
  * dev-only keys (see functions/.dev.vars in CLAUDE.md).
  */
 
-import type { PostHogAutocaptureOptions } from "posthog-react-native";
+import { createContext, useContext } from "react";
+import type { PostHogAutocaptureOptions, PostHog as PostHogClient } from "posthog-react-native";
+
+/**
+ * Minimal subset of the PostHog client that call sites use.
+ * Matches the real PostHog class signatures so both the real client
+ * and the no-op can be assigned to SafePostHogContext.
+ */
+interface SafePostHogClient {
+  capture: PostHogClient["capture"];
+  identify: PostHogClient["identify"];
+  reset: PostHogClient["reset"];
+  screen: PostHogClient["screen"];
+  register: PostHogClient["register"];
+  unregister: PostHogClient["unregister"];
+}
+
+/**
+ * No-op PostHog client used when PostHog is not configured (no API key).
+ * Provides the same method signatures as the real client so call sites
+ * don't need conditional logic — analytics calls simply do nothing.
+ */
+export const noopPostHog: SafePostHogClient = {
+  capture: () => Promise.resolve(),
+  identify: () => Promise.resolve(),
+  reset: () => Promise.resolve(),
+  screen: () => Promise.resolve(),
+  register: () => Promise.resolve(),
+  unregister: () => Promise.resolve(),
+};
+
+/**
+ * Context that always provides a PostHog-compatible client — either the
+ * real one (when PostHogProvider is mounted) or the no-op above.
+ * This prevents `usePostHog()` from throwing when PostHog is disabled.
+ */
+export const SafePostHogContext = createContext(noopPostHog);
+
+/** Safe replacement for usePostHog() — never throws, returns a no-op when PostHog is disabled. */
+export function useSafePostHog() {
+  return useContext(SafePostHogContext);
+}
 
 /**
  * Expo only guarantees compile-time replacement of `EXPO_PUBLIC_*` vars for

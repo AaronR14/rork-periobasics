@@ -5,23 +5,41 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { PostHogProvider } from "posthog-react-native";
+import { PostHogProvider, usePostHog } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import LoginScreen from "@/components/LoginScreen";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
-import { posthogAutocapture, posthogConfig } from "@/lib/posthog";
+import { posthogAutocapture, posthogConfig, SafePostHogContext, noopPostHog } from "@/lib/posthog";
+
+/**
+ * When PostHog is enabled, this inner component grabs the real client from
+ * PostHogProvider and re-provides it through SafePostHogContext so all
+ * useSafePostHog() callers get the real client.
+ */
+function PostHogBridge({ children }: { children: React.ReactNode }) {
+  const client = usePostHog();
+  return (
+    <SafePostHogContext.Provider value={client}>
+      {children}
+    </SafePostHogContext.Provider>
+  );
+}
 
 /**
  * Wraps children in PostHogProvider only when an API key is configured.
- * Without a key, the SDK throws a runtime error — this avoids that
- * by simply skipping the provider (analytics disabled, app works normally).
+ * Without a key, provides a no-op client via SafePostHogContext so that
+ * useSafePostHog() returns a harmless no-op instead of throwing.
  */
 function OptionalPostHog({ children }: { children: React.ReactNode }) {
   if (!posthogConfig.apiKey) {
-    return <>{children}</>;
+    return (
+      <SafePostHogContext.Provider value={noopPostHog}>
+        {children}
+      </SafePostHogContext.Provider>
+    );
   }
   return (
     <PostHogProvider
@@ -29,7 +47,7 @@ function OptionalPostHog({ children }: { children: React.ReactNode }) {
       options={{ host: posthogConfig.host }}
       autocapture={posthogAutocapture}
     >
-      {children}
+      <PostHogBridge>{children}</PostHogBridge>
     </PostHogProvider>
   );
 }

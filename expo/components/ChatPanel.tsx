@@ -32,10 +32,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { usePostHog } from "posthog-react-native";
-
 import Colors from "@/constants/colors";
 import { useAuth } from "@/hooks/useAuth";
+import { useSafePostHog } from "@/lib/posthog";
 import { submitChatAnswer, type ChatCompetencyEvent } from "@/hooks/useProgress";
 import { useChatSessions, type ChatSession, GREETING_TEXT } from "@/hooks/useChatSessions";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
@@ -264,7 +263,7 @@ export default function ChatPanel({
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const { user, isLoading: authLoading, signIn, isSigningIn } = useAuth();
-  const posthog = usePostHog();
+  const posthog = useSafePostHog();
   const {
     sessions,
     createSessionOnFirstMessage,
