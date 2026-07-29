@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import { usePostHog } from "posthog-react-native";
+
 import { supabase, mapUser, getValidAccessToken } from "@/lib/supabase";
 import { redirectUrl } from "@/lib/config";
-import { AnalyticsEvent, useSafePostHog } from "@/lib/posthog";
+import { AnalyticsEvent } from "@/lib/posthog";
 import type { AuthUser } from "@/lib/auth-provider";
 
 // Required for web popup handling.
@@ -24,7 +26,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const posthog = useSafePostHog();
+  const posthog = usePostHog();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);

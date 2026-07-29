@@ -22,9 +22,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
+import { usePostHog } from "posthog-react-native";
+
 import ScreenFade from "@/components/ScreenFade";
 import Colors from "@/constants/colors";
-import { useSafePostHog } from "@/lib/posthog";
 import { useAuth } from "@/hooks/useAuth";
 import { trackVideoView } from "@/hooks/useProgress";
 import { functionsUrl } from "@/lib/config";
@@ -290,7 +291,7 @@ export default function LessonScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { user } = useAuth();
-  const posthog = useSafePostHog();
+  const posthog = usePostHog();
   // Route params: videoId (Bunny GUID) and optional pre-fetched metadata
   // passed from the library page so the player shows info instantly.
   const params = useLocalSearchParams<{

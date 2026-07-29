@@ -5,57 +5,14 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { PostHogProvider, usePostHog } from "posthog-react-native";
-import { LogBox } from "react-native";
+import { PostHogProvider } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import LoginScreen from "@/components/LoginScreen";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
-import { posthogAutocapture, posthogConfig, SafePostHogContext, noopPostHog } from "@/lib/posthog";
-
-// PostHog flush failures are non-fatal and should not show a red error screen
-// to the user. They're logged to the console instead.
-LogBox.ignoreLogs(["Error while flushing PostHog", "PostHogFetchNetworkError"]);
-
-/**
- * When PostHog is enabled, this inner component grabs the real client from
- * PostHogProvider and re-provides it through SafePostHogContext so all
- * useSafePostHog() callers get the real client.
- */
-function PostHogBridge({ children }: { children: React.ReactNode }) {
-  const client = usePostHog();
-  return (
-    <SafePostHogContext.Provider value={client}>
-      {children}
-    </SafePostHogContext.Provider>
-  );
-}
-
-/**
- * Wraps children in PostHogProvider only when an API key is configured.
- * Without a key, provides a no-op client via SafePostHogContext so that
- * useSafePostHog() returns a harmless no-op instead of throwing.
- */
-function OptionalPostHog({ children }: { children: React.ReactNode }) {
-  if (!posthogConfig.apiKey) {
-    return (
-      <SafePostHogContext.Provider value={noopPostHog}>
-        {children}
-      </SafePostHogContext.Provider>
-    );
-  }
-  return (
-    <PostHogProvider
-      apiKey={posthogConfig.apiKey}
-      options={{ host: posthogConfig.host }}
-      autocapture={posthogAutocapture}
-    >
-      <PostHogBridge>{children}</PostHogBridge>
-    </PostHogProvider>
-  );
-}
+import { posthogAutocapture, posthogConfig } from "@/lib/posthog";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -127,10 +84,11 @@ export default function RootLayout() {
         Supabase user_id once login succeeds, which merges those anonymous
         events into the identified user's timeline.
       */}
-      {/* PostHog is only mounted when an API key is configured; without
-          one the SDK throws a runtime error, so we skip the provider entirely
-          and analytics are simply disabled. */}
-      <OptionalPostHog>
+      <PostHogProvider
+        apiKey={posthogConfig.apiKey}
+        options={{ host: posthogConfig.host }}
+        autocapture={posthogAutocapture}
+      >
         <AuthProvider>
           <ProgressProvider>
             <ChatSessionsProvider>
@@ -140,7 +98,7 @@ export default function RootLayout() {
             </ChatSessionsProvider>
           </ProgressProvider>
         </AuthProvider>
-      </OptionalPostHog>
+      </PostHogProvider>
     </QueryClientProvider>
   );
 }

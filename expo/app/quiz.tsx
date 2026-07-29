@@ -39,9 +39,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle as SvgCircle } from "react-native-svg";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePostHog } from "posthog-react-native";
+
 import Colors from "@/constants/colors";
 import ScreenFade from "@/components/ScreenFade";
-import { useSafePostHog } from "@/lib/posthog";
 import { QuizQuestion, getQuizForModule } from "@/data/quizzes";
 import { submitQuizAttempt } from "@/hooks/useProgress";
 import { useAuth } from "@/hooks/useAuth";
@@ -71,7 +72,7 @@ export default function QuizScreen() {
   const quiz = useMemo(() => getQuizForModule(moduleName), [moduleName]);
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const posthog = useSafePostHog();
+  const posthog = usePostHog();
 
   const [step, setStep] = useState<QuizStep>("intro");
   const [currentIndex, setCurrentIndex] = useState<number>(0);
