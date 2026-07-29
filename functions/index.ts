@@ -1776,15 +1776,25 @@ async function handleSuggestVideo(
       `https://video.bunnycdn.com/library/${libraryId}/collections?page=1&itemsPerPage=100&includeThumbnails=false&orderBy=date`,
       { headers: { Accept: "application/json", AccessKey: accessKey } },
     );
-    if (collectionsResp.ok) {
-      const collData = (await collectionsResp.json()) as { items?: Array<Record<string, unknown>> };
-      const collItems = Array.isArray(collData.items) ? collData.items : [];
-      for (const c of collItems) {
-        const guid = typeof c.guid === "string" ? c.guid : "";
-        const name = typeof c.name === "string" ? c.name : "";
-        if (guid && name) {
-          collectionMap.set(guid, normaliseModuleName(name));
-        }
+    // Same swallowed failure that handleVideoList had: without the collection
+    // names every video falls back to "Módulo 1", so this endpoint would go on
+    // to pick a suggestion from the wrong module instead of reporting that the
+    // Bunny call failed. The video list request above already hard-fails on a
+    // Bunny error; this one has to match.
+    if (!collectionsResp.ok) {
+      return bunnyUpstreamFailure(
+        "Bunny collections request failed",
+        collectionsResp.status,
+        await collectionsResp.text(),
+      );
+    }
+    const collData = (await collectionsResp.json()) as { items?: Array<Record<string, unknown>> };
+    const collItems = Array.isArray(collData.items) ? collData.items : [];
+    for (const c of collItems) {
+      const guid = typeof c.guid === "string" ? c.guid : "";
+      const name = typeof c.name === "string" ? c.name : "";
+      if (guid && name) {
+        collectionMap.set(guid, normaliseModuleName(name));
       }
     }
 
