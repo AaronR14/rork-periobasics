@@ -14,6 +14,26 @@ import { ChatSessionsProvider } from "@/hooks/useChatSessions";
 import { ProgressProvider } from "@/hooks/useProgress";
 import { posthogAutocapture, posthogConfig } from "@/lib/posthog";
 
+/**
+ * Wraps children in PostHogProvider only when an API key is configured.
+ * Without a key, the SDK throws a runtime error — this avoids that
+ * by simply skipping the provider (analytics disabled, app works normally).
+ */
+function OptionalPostHog({ children }: { children: React.ReactNode }) {
+  if (!posthogConfig.apiKey) {
+    return <>{children}</>;
+  }
+  return (
+    <PostHogProvider
+      apiKey={posthogConfig.apiKey}
+      options={{ host: posthogConfig.host }}
+      autocapture={posthogAutocapture}
+    >
+      {children}
+    </PostHogProvider>
+  );
+}
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
@@ -84,11 +104,10 @@ export default function RootLayout() {
         Supabase user_id once login succeeds, which merges those anonymous
         events into the identified user's timeline.
       */}
-      <PostHogProvider
-        apiKey={posthogConfig.apiKey}
-        options={{ host: posthogConfig.host }}
-        autocapture={posthogAutocapture}
-      >
+      {/* PostHog is only mounted when an API key is configured; without
+          one the SDK throws a runtime error, so we skip the provider entirely
+          and analytics are simply disabled. */}
+      <OptionalPostHog>
         <AuthProvider>
           <ProgressProvider>
             <ChatSessionsProvider>
@@ -98,7 +117,7 @@ export default function RootLayout() {
             </ChatSessionsProvider>
           </ProgressProvider>
         </AuthProvider>
-      </PostHogProvider>
+      </OptionalPostHog>
     </QueryClientProvider>
   );
 }
