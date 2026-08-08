@@ -442,10 +442,27 @@ const LOADING_MESSAGES = [
   "Revisando los apuntes",
   "Poniéndonos creativos",
   "Buscando un lápiz",
+  "Buscando una silla cómoda",
+  "Preparando café",
+  "Un último repaso",
+  "Pidiendo un borrador",
 ] as const;
 
+/** Fisher-Yates shuffle — returns a new shuffled copy. */
+function shuffleMessages<T>(arr: readonly T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 function QuizLoadingView() {
-  const [messageIndex, setMessageIndex] = useState<number>(0);
+  // Shuffled queue — messages appear in random order and only repeat
+  // once every message has been shown.
+  const queueRef = useRef<string[]>(shuffleMessages(LOADING_MESSAGES));
+  const [currentMessage, setCurrentMessage] = useState<string>(queueRef.current[0]);
   const messageOpacity = useRef(new Animated.Value(1)).current;
   const rotateValue = useRef(new Animated.Value(0)).current;
 
@@ -468,15 +485,20 @@ function QuizLoadingView() {
 
   // Cycle messages every 3 seconds with fade-in / fade-out.
   useEffect(() => {
+    let queuePos = 0;
     const interval = setInterval(() => {
-      // Fade out current message
       Animated.timing(messageOpacity, {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
       }).start(() => {
-        setMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
-        // Fade in new message
+        queuePos++;
+        // Reshuffle when we've exhausted the queue.
+        if (queuePos >= queueRef.current.length) {
+          queueRef.current = shuffleMessages(LOADING_MESSAGES);
+          queuePos = 0;
+        }
+        setCurrentMessage(queueRef.current[queuePos]);
         Animated.timing(messageOpacity, {
           toValue: 1,
           duration: 400,
@@ -493,7 +515,7 @@ function QuizLoadingView() {
         <Loader2 size={36} color={Colors.light.purple} strokeWidth={2.4} />
       </Animated.View>
       <Animated.Text style={[styles.errorTitle, { opacity: messageOpacity, marginTop: 24 }]}>
-        {LOADING_MESSAGES[messageIndex]}
+        {currentMessage}
       </Animated.Text>
       <Text style={styles.errorSubtitle}>
         Preparando tu evaluación
