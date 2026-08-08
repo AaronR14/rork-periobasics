@@ -43,10 +43,11 @@ import { usePostHog } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import ScreenFade from "@/components/ScreenFade";
-import { QuizQuestion, getQuizForModule } from "@/data/quizzes";
+import { QuizQuestion, getQuizForModule, type QuizModule } from "@/data/quizzes";
 import { submitQuizAttempt } from "@/hooks/useProgress";
 import { useAuth } from "@/hooks/useAuth";
 import { AnalyticsEvent } from "@/lib/posthog";
+import { generateQuiz } from "@/lib/quiz-api";
 
 type QuizStep = "intro" | "question" | "result" | "review";
 type SubmissionState = "idle" | "saving" | "saved" | "failed" | "skipped";
@@ -69,11 +70,14 @@ export default function QuizScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ module?: string }>();
   const moduleName = typeof params.module === "string" ? decodeURIComponent(params.module) : "";
-  const quiz = useMemo(() => getQuizForModule(moduleName), [moduleName]);
+  const fallbackQuiz = useMemo(() => getQuizForModule(moduleName), [moduleName]);
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const posthog = usePostHog();
 
+  const [quiz, setQuiz] = useState<QuizModule | undefined>(undefined);
+  const [quizLoading, setQuizLoading] = useState<boolean>(true);
+  const [quizError, setQuizError] = useState<string | null>(null);
   const [step, setStep] = useState<QuizStep>("intro");
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
@@ -83,6 +87,31 @@ export default function QuizScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const submittedRef = useRef<boolean>(false);
+
+  // Fetch dynamically generated quiz on mount — every visit produces fresh questions.
+  // Falls back to static quiz data if the backend is unreachable.
+  useEffect(() => {
+    let cancelled = false;
+    setQuizLoading(true);
+    setQuizError(null);
+    generateQuiz(moduleName, 10)
+      .then((generated) => {
+        if (cancelled) return;
+        setQuiz(generated);
+        setQuizLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("Dynamic quiz generation failed, falling back to static:", err);
+        if (fallbackQuiz) {
+          setQuiz(fallbackQuiz);
+        } else {
+          setQuizError("No se pudo generar la evaluación. Verifica tu conexión e inténtalo de nuevo.");
+        }
+        setQuizLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [moduleName, fallbackQuiz]);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -265,6 +294,26 @@ export default function QuizScreen() {
     return { correct, incorrect, percentage };
   }, [quiz, selectedAnswers]);
 
+  if (quizLoading) {
+    return (
+      <ScreenFade style={[styles.root, { paddingTop: insets.top + 12 }]}>
+        <StatusBar style="dark" />
+        <View style={styles.errorHeader}>
+          <Pressable onPress={() => router.back()} style={styles.headerIcon}>
+            <ChevronLeft size={24} color={Colors.light.navy} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+        <View style={styles.errorCenter}>
+          <Loader2 size={32} color={Colors.light.purple} strokeWidth={2.4} />
+          <Text style={styles.errorTitle}>Generando evaluación…</Text>
+          <Text style={styles.errorSubtitle}>
+            Creando preguntas personalizadas sobre {moduleName}.
+          </Text>
+        </View>
+      </ScreenFade>
+    );
+  }
+
   if (!quiz) {
     return (
       <ScreenFade style={[styles.root, { paddingTop: insets.top + 12 }]}>
@@ -275,9 +324,10 @@ export default function QuizScreen() {
           </Pressable>
         </View>
         <View style={styles.errorCenter}>
+          <TriangleAlert size={32} color={Colors.light.warmGrey} strokeWidth={2} />
           <Text style={styles.errorTitle}>Evaluación no disponible</Text>
           <Text style={styles.errorSubtitle}>
-            Aún no hay preguntas para este módulo.
+            {quizError ?? "No se pudo generar la evaluación. Inténtalo de nuevo más tarde."}
           </Text>
         </View>
       </ScreenFade>

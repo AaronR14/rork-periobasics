@@ -1420,7 +1420,9 @@ Reglas:
 3. Solo una opción debe ser correcta.
 4. Las preguntas deben evaluar comprensión, no memorización literal.
 5. Incluye una explicación breve para cada respuesta correcta.
-6. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni markdown.
+6. Asigna a cada pregunta un "topic" que identifique el subtema específico del que trata (en formato slug: palabras en minúscula separadas por guiones bajos, ej: "bolsa_periodontal", "perdida_osea", "radiografias").
+7. Variía los subtemas entre las preguntas para cubrir diferentes aspectos del material.
+8. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni markdown.
 
 Formato de respuesta requerido:
 {
@@ -1430,7 +1432,8 @@ Formato de respuesta requerido:
       "question": "texto de la pregunta",
       "options": ["A. opción", "B. opción", "C. opción", "D. opción"],
       "correctIndex": 0,
-      "explanation": "explicación breve"
+      "explanation": "explicación breve",
+      "topic": "subtema_slug"
     }
   ]
 }`;
@@ -1520,6 +1523,7 @@ Responde solo con el JSON en el formato especificado.`;
         options: string[];
         correctIndex: number;
         explanation: string;
+        topic?: string;
       } =>
         typeof q === "object" &&
         q !== null &&
@@ -1533,7 +1537,13 @@ Responde solo con el JSON en el formato especificado.`;
       return json({ error: "No valid questions generated" }, 502);
     }
 
-    return json({ questions: validated, moduleTitle, theme });
+    const questionsWithTopic = validated.map((q, i) => ({
+      ...q,
+      id: q.id || `q${i + 1}`,
+      topic: q.topic || moduleKey || "general",
+    }));
+
+    return json({ questions: questionsWithTopic, moduleTitle, theme });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return json({ error: "Upstream fetch failed", detail }, 502);

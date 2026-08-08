@@ -34,7 +34,6 @@ import ScreenFade from "@/components/ScreenFade";
 import { supabase, getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 import { functionsUrl, heroImageUri } from "@/lib/config";
 import { getModuleDescription } from "@/data/module-descriptions";
-import { getQuizForModule } from "@/data/quizzes";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useProgress,
@@ -693,7 +692,6 @@ function VideoRow({
 
 function QuizCard({ group }: { group: { name: string; videos: VideoListItem[] } }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const quiz = getQuizForModule(group.name);
   const pressIn = useCallback(() => {
     Animated.timing(scale, {
       toValue: 0.98,
@@ -731,10 +729,10 @@ function QuizCard({ group }: { group: { name: string; videos: VideoListItem[] } 
         </View>
         <View style={styles.quizCardBody}>
           <Text style={styles.quizCardTitle} numberOfLines={1}>
-            {quiz?.title ?? group.name}
+            {group.name}
           </Text>
           <Text style={styles.quizCardSubtitle}>
-            {quiz ? `${quiz.questions.length} preguntas` : "Evaluación próximamente"}
+            {"10 preguntas generadas con IA"}
           </Text>
         </View>
         <View style={styles.quizCardButton}>
