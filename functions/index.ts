@@ -862,9 +862,30 @@ const MODULE_KEYWORDS: Array<{ module: string; keywords: string[] }> = [
     keywords: [
       "clasificación", "clasificacion", "2017", "estadío", "estadio",
       "grado", "staging", "grading", "progresión", "progresion",
-      "periodontitis", "diagnóstico", "diagnostico", "severidad",
+      "periodontitis", "severidad",
       "extensión", "extension", "AAP", "EFP", "world workshop",
       "placa", "biofilm", "gingivitis", "placa inducida",
+    ],
+  },
+  {
+    module: "Módulo 3",
+    keywords: [
+      "diagnóstico", "diagnostico", "sondaje", "sonda", "bolsa", "bolsas",
+      "profundidad", "inserción clínica", "insercion clinica", "CAL",
+      "radiografía", "radiografia", "radiológico", "radiologico",
+      "tomografía", "tomografia", "cone beam", "hallazgo", "hallazgos",
+      "examen clínico", "examen clinico", "exploración", "exploracion",
+      "diagnóstico diferencial", "diagnostico diferencial",
+    ],
+  },
+  {
+    module: "Módulo 4",
+    keywords: [
+      "pronóstico", "pronostico", "plan de tratamiento", "plan",
+      "tratamiento", "fase", "etiopática", "etiopatica", "etiotrópica",
+      "etiotropica", "fase I", "fase inicial", "secuencia",
+      "terapia periodontal", "terapia", "mantenimiento",
+      "reevaluación", "reevaluacion", "caso clínico", "caso clinico",
     ],
   },
 ];
@@ -932,6 +953,14 @@ const SUB_TOPIC_TO_MODULE: Record<string, string> = {
   clasificacion_2017: "Módulo 2",
   staging_grading: "Módulo 2",
   progression_rate: "Módulo 2",
+  sondaje_periodontal: "Módulo 3",
+  lectura_bolsas: "Módulo 3",
+  examinacion_radiografica: "Módulo 3",
+  diagnostico_diferencial: "Módulo 3",
+  pronostico_periodontal: "Módulo 4",
+  plan_tratamiento: "Módulo 4",
+  fase_etiotropica: "Módulo 4",
+  secuencia_tratamiento: "Módulo 4",
 };
 
 interface ChatRequestBody {
@@ -1584,6 +1613,14 @@ Sub-temas disponibles (usa exactamente estos slugs):
 - clasificacion_2017 (Clasificación 2017, Módulo 2)
 - staging_grading (Estadios y Grados, Módulo 2)
 - progression_rate (Tasa de Progresión, Módulo 2)
+- sondaje_periodontal (Sondaje Periodontal, Módulo 3)
+- lectura_bolsas (Lectura de Bolsas, Módulo 3)
+- examinacion_radiografica (Examen Radiográfico, Módulo 3)
+- diagnostico_diferencial (Diagnóstico Diferencial, Módulo 3)
+- pronostico_periodontal (Pronóstico Periodontal, Módulo 4)
+- plan_tratamiento (Plan de Tratamiento, Módulo 4)
+- fase_etiotropica (Fase Etiotrópica, Módulo 4)
+- secuencia_tratamiento (Secuencia de Tratamiento, Módulo 4)
 
 Reglas:
 - Evalúa SOLO la respuesta del estudiante a la pregunta específica del tutor.
@@ -1609,7 +1646,7 @@ Criterios de evaluación:
 2. LENGUAJE TÉCNICO (technical_language_score, 0-100): ¿Utilizó terminología odontológica apropiada?
    - 90-100: Terminología precisa y consistente. 60-89: Algo de terminología con imprecisiones. 30-59: Lenguaje coloquial. 0-29: Sin terminología relevante.
 3. CORRECTITUD (is_correct, boolean): true solo si precision_score >= 60.
-4. SUB-TEMA (sub_topic_slug): uno de: anatomia_periodontal, funcion_periodontal, caracteristicas_clinicas, clasificacion_2017, staging_grading, progression_rate
+4. SUB-TEMA (sub_topic_slug): uno de: anatomia_periodontal, funcion_periodontal, caracteristicas_clinicas, clasificacion_2017, staging_grading, progression_rate, sondaje_periodontal, lectura_bolsas, examinacion_radiografica, diagnostico_diferencial, pronostico_periodontal, plan_tratamiento, fase_etiotropica, secuencia_tratamiento
 5. FEEDBACK (string): breve explicación de qué fue correcto y qué faltó.
 
 Reglas: evalúa SOLO la respuesta a la pregunta específica del tutor. Sé estricto pero justo. Si no hay pregunta evaluable, is_correct = false, precision_score = 0.`;
@@ -2343,6 +2380,14 @@ Sub-temas disponibles (usa exactamente estos slugs):
 - clasificacion_2017 (Clasificación 2017, Módulo 2)
 - staging_grading (Estadios y Grados, Módulo 2)
 - progression_rate (Tasa de Progresión, Módulo 2)
+- sondaje_periodontal (Sondaje Periodontal, Módulo 3)
+- lectura_bolsas (Lectura de Bolsas, Módulo 3)
+- examinacion_radiografica (Examen Radiográfico, Módulo 3)
+- diagnostico_diferencial (Diagnóstico Diferencial, Módulo 3)
+- pronostico_periodontal (Pronóstico Periodontal, Módulo 4)
+- plan_tratamiento (Plan de Tratamiento, Módulo 4)
+- fase_etiotropica (Fase Etiotrópica, Módulo 4)
+- secuencia_tratamiento (Secuencia de Tratamiento, Módulo 4)
 
 Reglas:
 - Identifica TODOS los sub-temas que se cubren en el video, aunque sea brevemente.
@@ -2709,6 +2754,14 @@ export default {
       clasificacion_2017: "Clasificación 2017",
       staging_grading: "Estadios y Grados",
       progression_rate: "Tasa de Progresión",
+      sondaje_periodontal: "Sondaje Periodontal",
+      lectura_bolsas: "Lectura de Bolsas",
+      examinacion_radiografica: "Examen Radiográfico",
+      diagnostico_diferencial: "Diagnóstico Diferencial",
+      pronostico_periodontal: "Pronóstico Periodontal",
+      plan_tratamiento: "Plan de Tratamiento",
+      fase_etiotropica: "Fase Etiotrópica",
+      secuencia_tratamiento: "Secuencia de Tratamiento",
     };
 
     // When current_question is present, the model handles intervention
