@@ -3,7 +3,6 @@ import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
 import {
   ArrowRight,
-  Bookmark,
   Check,
   ChevronLeft,
   Loader2,
@@ -341,11 +340,7 @@ export default function QuizScreen() {
           {step === "result" && "Resultados"}
           {step === "review" && "Revisión"}
         </Text>
-        {step === "question" ? (
-          <Pressable style={styles.headerIcon} hitSlop={12}>
-            <Bookmark size={22} color={Colors.light.navy} strokeWidth={2.2} />
-          </Pressable>
-        ) : step === "result" ? (
+        {step === "result" ? (
           <Pressable
             onPress={() => router.replace({ pathname: "/library", params: { tab: "progress" } })}
             style={styles.headerIcon}
@@ -353,8 +348,16 @@ export default function QuizScreen() {
           >
             <X size={22} color={Colors.light.navy} strokeWidth={2.2} />
           </Pressable>
-        ) : (
+        ) : step === "review" ? (
           <View style={styles.headerIcon} />
+        ) : (
+          <Pressable
+            onPress={() => router.replace({ pathname: "/library" })}
+            style={styles.headerIcon}
+            hitSlop={12}
+          >
+            <X size={22} color={Colors.light.navy} strokeWidth={2.2} />
+          </Pressable>
         )}
       </View>
 
