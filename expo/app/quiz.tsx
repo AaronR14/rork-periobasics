@@ -303,13 +303,7 @@ export default function QuizScreen() {
             <ChevronLeft size={24} color={Colors.light.navy} strokeWidth={2.4} />
           </Pressable>
         </View>
-        <View style={styles.errorCenter}>
-          <Loader2 size={32} color={Colors.light.purple} strokeWidth={2.4} />
-          <Text style={styles.errorTitle}>Generando evaluación…</Text>
-          <Text style={styles.errorSubtitle}>
-            Creando preguntas personalizadas sobre {moduleName}.
-          </Text>
-        </View>
+        <QuizLoadingView />
       </ScreenFade>
     );
   }
@@ -438,6 +432,70 @@ export default function QuizScreen() {
         />
       )}
     </ScreenFade>
+  );
+}
+
+const LOADING_MESSAGES = [
+  "Revisando los apuntes",
+  "Poniéndonos creativos",
+  "Buscando un lápiz",
+] as const;
+
+function QuizLoadingView() {
+  const [messageIndex, setMessageIndex] = useState<number>(0);
+  const messageOpacity = useRef(new Animated.Value(1)).current;
+  const rotateValue = useRef(new Animated.Value(0)).current;
+
+  // Continuous spinner rotation — independent of message cycling.
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(rotateValue, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    ).start();
+  }, [rotateValue]);
+
+  const spin = rotateValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  // Cycle messages every 3 seconds with fade-in / fade-out.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Fade out current message
+      Animated.timing(messageOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+        // Fade in new message
+        Animated.timing(messageOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [messageOpacity]);
+
+  return (
+    <View style={styles.errorCenter}>
+      <Animated.View style={{ transform: [{ rotate: spin }] }}>
+        <Loader2 size={36} color={Colors.light.purple} strokeWidth={2.4} />
+      </Animated.View>
+      <Animated.Text style={[styles.errorTitle, { opacity: messageOpacity, marginTop: 24 }]}>
+        {LOADING_MESSAGES[messageIndex]}
+      </Animated.Text>
+      <Text style={styles.errorSubtitle}>
+        Preparando tu evaluación
+      </Text>
+    </View>
   );
 }
 
