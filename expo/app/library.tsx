@@ -732,7 +732,7 @@ function QuizCard({ group }: { group: { name: string; videos: VideoListItem[] } 
             {group.name}
           </Text>
           <Text style={styles.quizCardSubtitle}>
-            {"10 preguntas generadas con IA"}
+            {"10 preguntas"}
           </Text>
         </View>
         <View style={styles.quizCardButton}>
