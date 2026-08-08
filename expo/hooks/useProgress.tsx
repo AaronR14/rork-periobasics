@@ -5,6 +5,7 @@ import createContextHook from "@nkzw/create-context-hook";
 import { supabase, syncProfile, getValidAccessToken, isUnauthorized, SESSION_EXPIRED_MESSAGE } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { functionsUrl, supabaseHeaders } from "@/lib/config";
+import { MODULE_DESCRIPTIONS } from "@/data/module-descriptions";
 
 /** A single sub-topic progress row from the student_progress table. */
 export interface SubTopicProgress {
@@ -500,7 +501,12 @@ export function computeModuleSummaries(params: {
     }
   }
 
+  // Always include every known module so the progress page shows all of
+  // them — even modules with no videos, quiz attempts, or progress rows yet.
+  // Without this, modules 3 and 4 (which may not have competency_tags rows
+  // or Bunny collections yet) would never appear in the progress tab.
   const allModuleNames = new Set<string>([
+    ...Object.keys(MODULE_DESCRIPTIONS),
     ...moduleVideos.keys(),
     ...moduleSubTopics.keys(),
     ...quizByModule.keys(),
