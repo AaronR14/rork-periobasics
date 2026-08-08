@@ -41,7 +41,7 @@ export const posthogConfig = {
    * the project region chosen at signup — must match that choice exactly,
    * PostHog projects are region-locked.
    */
-  host: env("EXPO_PUBLIC_POSTHOG_HOST") ?? "https://eu.i.posthog.com",
+  host: (env("EXPO_PUBLIC_POSTHOG_HOST") ?? "https://us.i.posthog.com").replace(/\/+$/, ""),
 } as const;
 
 /**
