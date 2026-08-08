@@ -482,11 +482,22 @@ export function computeModuleSummaries(params: {
   const quizBySubtopic = new Map<string, QuizBestScore>();
   // Also keep module -> quiz scores for legacy rows without sub_topic_slug
   const quizByModule = new Map<string, QuizBestScore>();
+  // Aggregate ALL quiz scores per module (with or without subtopic_slug).
+  // This ensures modules without competency_tags / student_progress rows
+  // (e.g. Module 3 & 4) still show quiz results in the progress tab.
+  const quizAllByModule = new Map<string, { best: number; attempts: number }>();
   for (const q of quizBestScores) {
     if (q.subtopic_slug) {
       quizBySubtopic.set(q.subtopic_slug, q);
     } else {
       quizByModule.set(q.module_name, q);
+    }
+    const agg = quizAllByModule.get(q.module_name);
+    if (agg) {
+      agg.best = Math.max(agg.best, q.best_score);
+      agg.attempts += q.attempts;
+    } else {
+      quizAllByModule.set(q.module_name, { best: q.best_score, attempts: q.attempts });
     }
   }
 
@@ -510,6 +521,7 @@ export function computeModuleSummaries(params: {
     ...moduleVideos.keys(),
     ...moduleSubTopics.keys(),
     ...quizByModule.keys(),
+    ...quizAllByModule.keys(),
   ]);
 
   const summaries: ModuleProgressSummary[] = [];
@@ -532,7 +544,10 @@ export function computeModuleSummaries(params: {
         totalQuizAttempts += quiz.attempts;
       }
     }
-    // Fall back to legacy module-level quiz score if no per-subtopic scores exist
+    // Fall back to legacy module-level quiz score if no per-subtopic scores
+    // exist. If that's also empty, use the aggregate of all quiz scores for
+    // this module (covers modules with AI-generated subtopic slugs that don't
+    // match any student_progress row, e.g. Module 3 & 4).
     let quizBestScore: number;
     let quizAttempts: number;
     if (subsWithQuiz.length > 0) {
@@ -542,8 +557,14 @@ export function computeModuleSummaries(params: {
       quizAttempts = totalQuizAttempts;
     } else {
       const legacyQuiz = quizByModule.get(moduleName);
-      quizBestScore = legacyQuiz?.best_score ?? 0;
-      quizAttempts = legacyQuiz?.attempts ?? 0;
+      if (legacyQuiz) {
+        quizBestScore = legacyQuiz.best_score;
+        quizAttempts = legacyQuiz.attempts;
+      } else {
+        const allAgg = quizAllByModule.get(moduleName);
+        quizBestScore = allAgg?.best ?? 0;
+        quizAttempts = allAgg?.attempts ?? 0;
+      }
     }
 
     // Tutor score: average chat_component across sub-topics that have chat events.
