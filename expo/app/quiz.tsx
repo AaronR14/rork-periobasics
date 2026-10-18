@@ -955,7 +955,7 @@ function SuccessModal({
 
   return (
     <Reanimated.View
-      style={[StyleSheet.absoluteFillObject, styles.modalOverlay, overlayAnimatedStyle]}
+      style={[StyleSheet.absoluteFill, styles.modalOverlay, overlayAnimatedStyle]}
       pointerEvents="box-none"
     >
       <Reanimated.View
@@ -1629,7 +1629,11 @@ const styles = StyleSheet.create({
     color: Colors.light.warmGreyDark,
   },
   modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.65)",
     justifyContent: "flex-end",
     alignItems: "stretch",

@@ -41,7 +41,10 @@
       "expo-web-browser",
       "expo-video",
       "expo-secure-store",
-      "expo-localization"
+      "expo-localization",
+      "expo-image",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

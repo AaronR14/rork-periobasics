@@ -939,7 +939,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   upNextThumbPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "#E2E8F0",
   },
   upNextCardTitle: {
@@ -991,7 +995,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "#0B1220",
     alignItems: "center",
     justifyContent: "center",
