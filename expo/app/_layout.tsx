@@ -1,11 +1,11 @@
 // template
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { PostHogProvider } from "posthog-react-native";
+import { PostHogProvider, usePostHog } from "posthog-react-native";
 
 import Colors from "@/constants/colors";
 import LoginScreen from "@/components/LoginScreen";
@@ -33,6 +33,29 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Manual screen-view tracking.
+ *
+ * Replaces posthog-react-native's built-in captureScreens, which mounts a
+ * navigation hook that throws when rendered outside a navigator (this
+ * provider wraps the logged-out LoginScreen branch too — see lib/posthog.ts).
+ * usePathname reads expo-router's route store directly, so it works both
+ * with and without a mounted navigator and never throws.
+ */
+function ScreenViewTracker() {
+  const pathname = usePathname();
+  const posthog = usePostHog();
+  const lastScreenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!posthog || !pathname || lastScreenRef.current === pathname) return;
+    lastScreenRef.current = pathname;
+    posthog.screen(pathname);
+  }, [pathname, posthog]);
+
+  return null;
+}
 
 function RootLayoutNav() {
   return (
@@ -63,10 +86,20 @@ function AuthGate() {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <>
+        <ScreenViewTracker />
+        <LoginScreen />
+      </>
+    );
   }
 
-  return <RootLayoutNav />;
+  return (
+    <>
+      <ScreenViewTracker />
+      <RootLayoutNav />
+    </>
+  );
 }
 
 export default function RootLayout() {

@@ -45,12 +45,17 @@ export const posthogConfig = {
 } as const;
 
 /**
- * Autocapture: touches + screen views only, never raw content.
+ * Autocapture: touches only, never raw content.
  *
  * - captureTouches: opt-in in this SDK (default false) — turned on here so
  *   we get "which button was tapped" events.
- * - captureScreens: on by default; kept explicit for clarity ("which
- *   screen opened").
+ * - captureScreens: OFF. The built-in option mounts a navigation hook that
+ *   calls useNavigationState() during render — but this provider wraps the
+ *   whole tree, including the logged-out LoginScreen branch, which sits
+ *   outside any navigator. posthog-react-native (SDK 57) hard-throws
+ *   "Couldn't find a navigation object" in that case. Screen views are
+ *   tracked manually in app/_layout.tsx via ScreenViewTracker instead,
+ *   which works with and without a mounted navigator.
  * - propsToCapture: narrowed to static UI-chrome props. Whatever the SDK's
  *   own default list includes, we don't rely on it — this stops a future
  *   TextInput's `value`/`defaultValue` from ever being swept up by a touch
@@ -69,7 +74,7 @@ export const posthogConfig = {
  */
 export const posthogAutocapture: PostHogAutocaptureOptions = {
   captureTouches: true,
-  captureScreens: true,
+  captureScreens: false,
   propsToCapture: ["accessibilityLabel", "title"],
 };
 
