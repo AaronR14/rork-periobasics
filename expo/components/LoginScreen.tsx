@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
  * active session — blocks all navigation until the user signs in.
  */
 export default function LoginScreen() {
-  const { signIn, isSigningIn, error, clearError } = useAuth();
+  const { signIn, signInAsGuest, isSigningIn, error, clearError } = useAuth();
   const insets = useSafeAreaInsets();
 
   return (
@@ -40,6 +40,15 @@ export default function LoginScreen() {
           ) : (
             <Text style={styles.buttonText}>Continuar con Google</Text>
           )}
+        </Pressable>
+
+        <Pressable
+          onPress={() => signInAsGuest()}
+          disabled={isSigningIn}
+          style={styles.guestButton}
+          hitSlop={8}
+        >
+          <Text style={styles.guestButtonText}>Entrar como invitado</Text>
         </Pressable>
         {/* TODO(App Store release): Apple exige ofrecer "Sign in with Apple" como
             alternativa en cuanto la app se distribuya a testers externos de
@@ -125,5 +134,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700" as const,
     color: "#FFFFFF",
+  },
+  guestButton: {
+    marginTop: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  guestButtonText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.light.warmGreyDark,
+    textDecorationLine: "underline",
   },
 });

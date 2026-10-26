@@ -18,6 +18,7 @@ interface AuthContextType {
   isSigningIn: boolean;
   error: string | null;
   signIn: (provider: "google" | "apple") => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
   getAccessToken: () => Promise<string | null>;
@@ -291,6 +292,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  /**
+   * Guest access: Supabase anonymous sign-in. Creates a real, session-backed
+   * user (own id, own progress rows, full RLS) with no Google account —
+   * ideal for testers. The anonymous user id is device-local: if the tester
+   * signs out or reinstalls, that progress is not recoverable unless they
+   * later link a real provider.
+   * Requires "Anonymous sign-ins" enabled in Supabase Auth settings.
+   */
+  async function signInAsGuest() {
+    setIsSigningIn(true);
+    setError(null);
+    try {
+      const { data, error: anonError } = await supabase.auth.signInAnonymously();
+      if (anonError) throw anonError;
+      if (data.session) updateUserFromSession(data.session);
+    } catch (err) {
+      console.error("Guest sign in failed:", err);
+      setError(err instanceof Error ? err.message : "No se pudo entrar como invitado");
+    } finally {
+      if (isMountedRef.current) setIsSigningIn(false);
+    }
+  }
+
   async function signOut() {
     try {
       await supabase.auth.signOut();
@@ -306,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isSigningIn, error, signIn, signOut, clearError, getAccessToken }}
+      value={{ user, isLoading, isSigningIn, error, signIn, signInAsGuest, signOut, clearError, getAccessToken }}
     >
       {children}
     </AuthContext.Provider>
