@@ -923,7 +923,7 @@ export default function ChatPanel({
                   <TypingDots />
                 </View>
               </View>
-            ) : null
+            ) : undefined
           }
         />
 
